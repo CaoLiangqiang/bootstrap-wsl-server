@@ -1,15 +1,19 @@
 ---
 name: bootstrap-wsl-server
-description: Configure, verify, operate, document, and troubleshoot a Windows-hosted WSL2 Ubuntu SSH server using default NAT networking, Windows portproxy, a Private/LocalSubnet firewall rule, password and public-key authentication, startup automation, standalone host/client HTML manuals, and an optional loopback-only health workbench. Use when Codex needs to reproduce this WSL server setup on another Windows computer, generate administrator or client access manuals, enroll SSH public keys, change the LAN SSH port, audit access logs, install the local workbench, diagnose WSL route or DNS failures, or safely roll back LAN access.
+description: Apply the Phase 2 server extension after bootstrap-wsl-ai-dev has established a native WSL foundation. Configure, verify, operate, document, and troubleshoot WSL2 Ubuntu SSH using default NAT networking, Windows portproxy, a Private/LocalSubnet firewall rule, password and public-key authentication, startup automation, standalone host/client HTML manuals, and an optional loopback-only health workbench. Use when Codex needs to extend a prepared WSL AI workstation into a LAN SSH server, generate administrator or client access manuals, enroll SSH public keys, change the LAN SSH port, audit access logs, or safely roll back LAN access.
 ---
 
 # Bootstrap WSL Server
 
 Build the server in layers so each trust boundary remains visible: WSL services, Windows LAN forwarding, client authentication, then the optional local workbench.
 
+## Foundation dependency
+
+Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `references/base-integration.md` and, when both repositories are available, `../bootstrap-wsl-ai-dev/references/wsl-server-extension-contract.md` before changing anything. Do not repeat AI CLI migration, Windows AI cleanup, GitHub/GitLab client setup, Docker installation, or Explorer registry work here.
+
 ## Safety rules
 
-- Start with `scripts/audit-wsl-server.sh`; do not mutate networking until the current state is known.
+- Start with the Phase 1 audit (`$bootstrap-wsl-ai-dev`) and then run `scripts/audit-wsl-server.sh`; do not mutate networking until the current state is known.
 - Keep WSL on default NAT unless the user explicitly requests and validates another mode. Do not create `.wslconfig` merely to make SSH reachable.
 - Never request, read, print, copy, or commit passwords, tokens, or private keys. Accept only `.pub` files for key enrollment.
 - Keep the Windows firewall limited to `Private` profiles and `LocalSubnet` unless the user explicitly defines a stronger external boundary.
@@ -17,20 +21,22 @@ Build the server in layers so each trust boundary remains visible: WSL services,
 - Treat Docker reachability as independent from SSH and WSL routing. Do not change global DNS to fix a registry-specific block.
 - Ask the user to enter sudo credentials and approve Windows UAC locally. Do not collect those credentials.
 - Revalidate distribution name, usernames, port availability, Windows network profile, and LAN IP on every new computer.
+- Read and preserve the foundation's `/etc/wsl.conf` `[interop]` and network sections. The server extension only verifies `[boot] systemd` and `[user] default`; its local `configure-wsl-base.sh` is a compatibility fallback, not the primary foundation workflow.
 
 ## Workflow
 
-1. Read `references/setup-runbook.md` completely before configuring a new machine.
-2. Run `bash scripts/audit-wsl-server.sh` and resolve any missing default route or resolver before installation.
-3. Configure `/etc/wsl.conf` with `scripts/configure-wsl-base.sh`; preserve unrelated sections. After changes, require `wsl --shutdown` from Windows PowerShell.
-4. Configure OpenSSH with `sudo bash scripts/configure-wsl-sshd.sh --user USER`. Keep both password and public-key authentication only when the user requests both.
-5. Copy `scripts/Configure-WslSshLan.ps1` to Windows and run it from elevated PowerShell with the confirmed distribution and LAN port.
-6. Verify Linux and Windows layers with `bash scripts/verify-wsl-server.sh` and the PowerShell status commands in the runbook.
-7. Enroll only a public key file with `bash scripts/add-ssh-public-key.sh USER.pub`; return its fingerprint to the user.
-8. Always generate the standalone host and client manuals with `scripts/render-manuals.sh`; give the client file to access users without secrets or fixed LAN IPs.
-9. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`; this also refreshes both standalone manuals.
-10. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
-11. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
+1. Read `references/setup-runbook.md` and `references/base-integration.md` completely before configuring a new machine.
+2. Confirm the Phase 1 handoff: systemd is PID 1, the selected default user exists, WSL has a default route, and `/etc/resolv.conf` has a nameserver.
+3. Run `bash scripts/audit-wsl-server.sh`; stop if the foundation is unhealthy. Do not enable mirrored networking to repair it.
+4. If the foundation Skill is unavailable and only the shared WSL keys are missing, use `sudo bash scripts/configure-wsl-base.sh --user USER` as a compatibility fallback. Do not pass `--isolate-windows-path` when Phase 1 already owns PATH isolation.
+5. Configure OpenSSH with `sudo bash scripts/configure-wsl-sshd.sh --user USER`. Keep both password and public-key authentication only when the user requests both.
+6. Copy `scripts/Configure-WslSshLan.ps1` to Windows and run it from elevated PowerShell with the confirmed distribution and LAN port.
+7. Verify Linux and Windows layers with `bash scripts/verify-wsl-server.sh` and the PowerShell status commands in the runbook.
+8. Enroll only a public key file with `bash scripts/add-ssh-public-key.sh USER.pub`; return its fingerprint to the user.
+9. Always generate the standalone host and client manuals with `scripts/render-manuals.sh`; give the client file to access users without secrets or fixed LAN IPs.
+10. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`; this also refreshes both standalone manuals.
+11. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
+12. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
 
 ## Success criteria
 
@@ -41,11 +47,13 @@ Build the server in layers so each trust boundary remains visible: WSL services,
 - Password login works when enabled, and an explicitly selected private key completes a signed public-key login.
 - The startup task wakes the selected WSL distribution after Windows logon.
 - `wsl-server-host-manual.html` and `wsl-server-client-manual.html` exist with all template values resolved.
+- The Phase 1 foundation remains unchanged: no new mirrored mode, global DNS override, Docker proxy rewrite, or Windows AI cleanup occurred during the server extension.
 - When installed, the workbench and five-minute health timer are active and the dashboard is reachable only on `127.0.0.1:4173`.
 
 ## Resource routing
 
 - Read `references/setup-runbook.md` for the complete installation sequence and shell boundaries.
+- Read `references/base-integration.md` for the Phase 1 handoff and ownership contract.
 - Read `references/operations.md` for startup, access logs, key enrollment, port changes, workbench use, and rollback.
 - Read `references/troubleshooting.md` before changing SSH policy, WSL networking, DNS, firewall rules, or client keys.
 - Run `scripts/audit-wsl-server.sh` before changes and `scripts/verify-wsl-server.sh` after each layer.

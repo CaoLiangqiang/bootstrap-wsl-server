@@ -60,15 +60,19 @@ bash scripts/audit-wsl-server.sh
 
 Resolve a missing default route or resolver before installing services.
 
-## 3. Configure the WSL baseline
+## 3. Complete the Phase 1 WSL baseline
 
-Run inside WSL, replacing `alice`:
+Run the base Skill first. From the `bootstrap-wsl-ai-dev` repository, replacing `alice`:
 
 ```bash
-sudo bash scripts/configure-wsl-base.sh --user alice
+sudo bash scripts/configure-wsl-systemd.sh --user alice
+sudo bash scripts/configure-wsl-path-isolation.sh --check
+sudo bash scripts/configure-wsl-path-isolation.sh
 ```
 
-Add `--isolate-windows-path` only when the user wants WSL commands isolated from imported Windows PATH entries. This setting preserves explicit Windows interop and does not alter networking.
+Run the PATH isolation script only when the user chooses native WSL command isolation. It preserves explicit Windows interop and does not alter networking. Read `references/wsl-server-extension-contract.md` in the base repository before handing off.
+
+If the base repository is unavailable, the server repository contains `scripts/configure-wsl-base.sh` as a compatibility fallback for only the shared systemd/default-user keys. Do not use its PATH option to bypass the base Skill's ownership.
 
 Then run in Windows PowerShell:
 
@@ -77,7 +81,7 @@ wsl --shutdown
 wsl -d Ubuntu
 ```
 
-Back in WSL, verify:
+Back in WSL, verify the foundation before configuring SSH:
 
 ```bash
 ps -p 1 -o comm=

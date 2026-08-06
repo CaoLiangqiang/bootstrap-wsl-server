@@ -45,7 +45,7 @@ wsl --shutdown
 wsl -d Ubuntu
 ```
 
-Do not hard-code a global resolver before proving the network route works. Preserve `/etc/wsl.conf` settings for systemd, default user, and optional PATH isolation; they are independent from networking mode.
+Do not hard-code a global resolver before proving the network route works. Preserve `/etc/wsl.conf` settings established by the base Skill for systemd, default user, and optional PATH isolation; they are independent from networking mode.
 
 ## 3. Windows port is unreachable
 
@@ -126,4 +126,3 @@ The expected bind address is `127.0.0.1`, never `0.0.0.0`. Windows state collect
 ## 7. Docker is unrelated
 
 Docker Engine can be active while Docker Hub is blocked or DNS-poisoned by a corporate network. Do not change WSL global DNS, enable mirrored networking, or widen the SSH firewall to fix a registry-specific failure. Diagnose Docker registry access separately and use a confirmed proxy or another network when required.
-

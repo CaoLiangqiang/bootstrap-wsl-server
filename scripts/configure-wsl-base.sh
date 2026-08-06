@@ -10,8 +10,10 @@ usage() {
   cat <<'EOF'
 Usage: configure-wsl-base.sh [--user USER] [--isolate-windows-path] [--check] [--file PATH]
 
-Ensures systemd and the default WSL user while preserving unrelated wsl.conf
-sections. Windows PATH isolation is opt-in and does not disable interop.
+Compatibility fallback for the Phase 1 WSL foundation. Ensures systemd and the
+default WSL user while preserving unrelated wsl.conf sections. Prefer
+bootstrap-wsl-ai-dev/scripts/configure-wsl-systemd.sh for foundation setup and
+its configure-wsl-path-isolation.sh for the optional Windows PATH decision.
 EOF
 }
 

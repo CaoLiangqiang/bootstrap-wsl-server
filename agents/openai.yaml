@@ -1,4 +1,4 @@
 interface:
   display_name: "Bootstrap WSL Server"
-  short_description: "Configure WSL SSH and generate host/client manuals"
-  default_prompt: "Use $bootstrap-wsl-server to configure this Windows computer as a WSL SSH server and generate the host and client manuals."
+  short_description: "Extend WSL foundation into SSH server"
+  default_prompt: "Use $bootstrap-wsl-server after $bootstrap-wsl-ai-dev to configure the WSL SSH server and generate host/client manuals."
