@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WSL __DISTRO__ · 访问用户手册</title>
+  <style>
+    :root { --ink:#17201c; --muted:#68736d; --line:#dce2df; --bg:#f4f6f5; --panel:#fff; --green:#177a4c; --green-soft:#e7f4ed; --amber:#a36413; --amber-soft:#fff2dc; --red:#b33c38; font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    * { box-sizing:border-box; } body { margin:0; line-height:1.65; } header { padding:40px max(20px,calc((100% - 900px)/2)); color:#fff; background:#111915; } h1 { margin:0; font-size:29px; line-height:1.2; } header p { max-width:700px; margin:10px 0 0; color:#b5c0ba; font-size:14px; } main { max-width:900px; margin:0 auto; padding:20px 20px 60px; } h2 { margin:34px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--line); font-size:20px; } h3 { margin:22px 0 6px; font-size:15px; } code,pre { font-family:"Cascadia Code",Consolas,monospace; } code { padding:1px 4px; border-radius:3px; background:#edf0ee; font-size:.9em; } pre { padding:13px 15px; overflow:auto; color:#e3ebe6; background:#17201c; border-radius:5px; font-size:12px; line-height:1.55; } .notice { margin:14px 0; padding:13px 15px; border-left:4px solid var(--green); background:var(--green-soft); } .notice.warn { border-color:var(--amber); background:var(--amber-soft); } table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); font-size:13px; } th,td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { color:var(--muted); font-size:11px; } a { color:var(--green); } li { margin:5px 0; } .steps { counter-reset:step; padding:0; list-style:none; } .steps li { counter-increment:step; display:grid; grid-template-columns:28px 1fr; gap:8px; align-items:start; } .steps li::before { content:counter(step); width:24px; height:24px; display:grid; place-items:center; color:#fff; background:var(--green); border-radius:50%; font-size:12px; font-weight:700; } footer { max-width:900px; margin:0 auto; padding:0 20px 30px; color:var(--muted); font-size:12px; } @media (max-width:600px) { header { padding:28px 16px; } main { padding:16px; } h1 { font-size:24px; } table { display:block; overflow:auto; white-space:nowrap; } }
+  </style>
+</head>
+<body>
+  <header><h1>WSL __DISTRO__<br>访问用户手册</h1><p>面向需要长期连接这台工作站的开发者。长期会话请使用个人 SSH 公钥；密码只用于首次登记或应急访问。</p></header>
+  <main>
+    <div class="notice"><b>连接前准备：</b>确保客户端与服务器在同一可互通局域网，向管理员确认当前 Windows LAN 地址和端口。默认端口是 <code>__SSH_PORT__</code>，地址可能因 DHCP 变化。</div>
+    <p>本文中的“服务器所在 Windows”指运行 WSL __DISTRO__ 的 <code>__WINDOWS_HOSTNAME__</code>；“用户 Windows 客户端”指实际发起 SSH 连接的另一台（或本机测试用）Windows。除非特别说明，PowerShell 命令都在用户 Windows 客户端执行。</p>
+    <h2>1. 连接参数</h2>
+    <table><tbody><tr><th>用户名</th><td><code>__WSL_USER__</code></td></tr><tr><th>SSH 端口</th><td><code>__SSH_PORT__</code></td></tr><tr><th>认证</th><td>密码或 SSH 公钥；root 登录禁止</td></tr><tr><th>地址</th><td>以管理员提供的 Windows 有线/WLAN 地址为准</td></tr></tbody></table>
+    <h2>2. 创建个人密钥</h2>
+    <p>在发起连接的客户端执行。不要把私钥文件发给任何人。</p>
+    <h3>Linux/macOS/WSL</h3>
+    <pre>ssh-keygen -t ed25519 -a 64 -f ~/.ssh/id_ed25519_wsl_server</pre>
+    <h3>Windows PowerShell</h3>
+    <p>推荐交互运行，看到口令提示时连续按两次 Enter，表示创建无口令私钥：</p>
+    <pre>ssh-keygen -t ed25519 -a 64 -f "$env:USERPROFILE\.ssh\id_ed25519_wsl_server"</pre>
+    <div class="notice warn">不要写 <code>-N=</code> 来表示空口令。在 Windows PowerShell 5.1 的参数传递中，它可能把私钥口令设置为单字符 <code>=</code>；私钥指纹仍会正确，直到 BatchMode 无法解锁时才暴露问题。<code>-C=comment</code> 也可能让注释带前导 <code>=</code>。</div>
+    <p>查看需要交给管理员的公钥：</p>
+    <pre>cat ~/.ssh/id_ed25519_wsl_server.pub
+# Windows PowerShell：
+Get-Content "$env:USERPROFILE\.ssh\id_ed25519_wsl_server.pub"</pre>
+    <div class="notice warn">只发送以 <code>ssh-ed25519</code> 开头的单行公钥；不要发送没有 <code>.pub</code> 后缀的私钥。</div>
+    <h2>3. 让管理员登记公钥</h2>
+    <ol class="steps"><li>通过公司认可的安全渠道把 `.pub` 文件发送给管理员。</li><li>管理员在 WSL 中运行工作台目录里的登记脚本。</li><li>管理员会回传公钥指纹；核对指纹后再首次使用。</li></ol>
+    <pre>bash ~/wsl-server-workbench/scripts/add-ssh-public-key.sh /path/to/user.pub</pre>
+    <p>登记脚本会校验 OpenSSH 格式、自动去重，并保持 <code>~/.ssh/authorized_keys</code> 为 <code>600</code>。它不会打印公钥内容。</p>
+    <div class="notice warn">只把 <code>.pub</code> 文件交给管理员，由管理员运行登记脚本。不要用 PowerShell 管道拼接复杂的远端 <code>read/grep/printf</code> 命令直接修改 <code>authorized_keys</code>；Windows 与远端 shell 的转义差异容易损坏密钥行。</div>
+    <h2>4. 配置长期连接</h2>
+    <p>在客户端的 <code>~/.ssh/config</code> 添加：</p>
+    <pre>Host __WINDOWS_HOSTNAME__-wsl
+    HostName &lt;Windows-LAN-IP&gt;
+    Port __SSH_PORT__
+    User __WSL_USER__
+    IdentityFile ~/.ssh/id_ed25519_wsl_server
+    IdentitiesOnly yes
+    IdentityAgent none
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    TCPKeepAlive yes</pre>
+    <p>之后直接连接：</p>
+    <pre>ssh __WINDOWS_HOSTNAME__-wsl</pre>
+    <p>首次连接时核对管理员提供的 ED25519 主机指纹。不要为了绕过警告使用 <code>StrictHostKeyChecking=no</code>。</p>
+    <h2>5. 文件传输与开发</h2>
+    <pre>scp -P __SSH_PORT__ ./file.txt __WSL_USER__@&lt;Windows-LAN-IP&gt;:~/
+sftp -P __SSH_PORT__ __WSL_USER__@&lt;Windows-LAN-IP&gt;
+ssh -p __SSH_PORT__ __WSL_USER__@&lt;Windows-LAN-IP&gt;</pre>
+    <h2>6. 分层验证</h2>
+    <ol class="steps"><li>核对管理员回传的指纹：<code>ssh-keygen -lf ~/.ssh/id_ed25519_wsl_server.pub</code>。Windows PowerShell 可运行 <code>ssh-keygen -lf "$env:USERPROFILE\.ssh\id_ed25519_wsl_server.pub"</code>。</li><li>必要时从私钥导出公钥确认匹配（只在本机执行，不输出或发送私钥）：<code>ssh-keygen -y -f ~/.ssh/id_ed25519_wsl_server | ssh-keygen -lf -</code>。Windows PowerShell 同样可用对应的完整路径。</li><li>隔离 Agent 和其他身份文件，使用显式私钥测试：<code>ssh -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519_wsl_server -p __SSH_PORT__ __WSL_USER__@&lt;Windows-LAN-IP&gt; "printf CODEX_SSH_OK"</code>。</li><li>只有看到 <code>Authenticated to ...</code> 或远端命令输出 <code>CODEX_SSH_OK</code> 才算认证成功；<code>Server accepts key</code> 只表示公钥候选被接受，不代表签名认证已完成。</li></ol>
+    <div class="notice warn">若要让 Codex 或其他后台任务无交互连接，私钥必须能在 <code>BatchMode</code> 下使用。无口令私钥需要依靠本机文件权限、磁盘加密和账号安全保护；如果使用带口令私钥，必须配置 Codex/Agent 能正确解锁的凭据方案，不要把口令写入脚本或网页。</div>
+    <h2>7. 常见问题</h2>
+    <h3>Connection timed out</h3><p>确认地址是 Windows LAN 地址，不是 WSL 的 <code>172.30.*</code> 地址；确认客户端与服务器在同一网段；让管理员检查工作台“对外端口”和 Windows Private 防火墙。</p>
+    <h3>Connection refused</h3><p>通常表示 WSL/sshd 未运行或 Windows portproxy 目标失效。让管理员打开工作台查看 SSH 和转发状态。</p>
+    <h3>Permission denied (publickey,password)</h3><p>确认使用的是对应私钥、用户名为 <code>__WSL_USER__</code>、管理员已登记匹配的 `.pub` 文件。先按“分层验证”核对指纹并用显式 <code>-i</code>、<code>IdentitiesOnly=yes</code>、<code>IdentityAgent=none</code> 重试。不要因看到 <code>Server accepts key</code> 就立即修改服务器：如果随后出现 <code>sign_and_send_pubkey: signing using ssh-ed25519</code> 仍失败，优先检查私钥是否带口令、<code>BatchMode</code> 是否无法解锁、实际身份文件和 SSH Agent。PowerShell 5.1 中误用 <code>-N=</code> 可能把口令设成 <code>=</code>；可用 <code>ssh-keygen -y -P = -f &lt;private-key&gt;</code> 在用户 Windows 客户端验证该假设。不要分享私钥或包含敏感信息的完整调试日志；只有管理员在服务端日志中看到对应失败记录时，才需要进一步检查 sshd 实例和认证策略。</p>
+    <p>若已确认口令被误设为单字符 <code>=</code>，可在 Windows PowerShell 5.1 使用 stop-parsing 方式移除口令：</p>
+    <pre>ssh-keygen.exe --% -p -f C:\Users\__WINDOWS_USER__\.ssh\id_ed25519_wsl_server -P = -N ""</pre>
+    <p>修改后再次核对公钥指纹。本次真实接入中，修改前后均为 <code>SHA256:tgE1b+peA3zbPBkIN1gGp/YNXMnYr1RGHVv9D5nX9NQ</code>，最终隔离测试输出 <code>CODEX_SSH_OK</code>；服务器此前只记录 <code>Connection closed ... [preauth]</code>，这是客户端未能在 BatchMode 中解锁私钥造成的误导性症状。</p>
+    <h3>网络或 DNS 异常</h3><p>服务器使用默认 WSL NAT。不要在客户端要求服务器启用 mirrored networking；那曾导致服务器无默认路由和 DNS 断链。</p>
+    <h2>8. 安全要求</h2>
+    <ul><li>每位访问者使用自己的密钥，不共享私钥。</li><li>私钥设置为仅本人可读：Linux/macOS 使用 <code>chmod 600 ~/.ssh/id_ed25519_wsl_server</code>。</li><li>离职、设备丢失或密钥泄露时，立即通知管理员撤销对应公钥。</li><li>不要把服务器端口转发到公网；当前防火墙设计仅允许 Private/LocalSubnet。</li></ul>
+  </main>
+  <footer>WSL Server Workbench · 访问用户手册 · 以管理员实时提供的地址和端口为准</footer>
+</body>
+</html>

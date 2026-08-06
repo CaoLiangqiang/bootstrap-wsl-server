@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WSL Server Workbench · 管理员手册</title>
+  <style>
+    :root { --ink:#17201c; --muted:#68736d; --line:#dce2df; --bg:#f4f6f5; --panel:#fff; --green:#177a4c; --green-soft:#e7f4ed; --amber:#a36413; --amber-soft:#fff2dc; --red:#b33c38; --red-soft:#fbeceb; font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    * { box-sizing:border-box; } body { margin:0; line-height:1.65; }
+    header { padding:42px max(24px,calc((100% - 1080px)/2)); color:#fff; background:#111915; }
+    header p { max-width:760px; margin:10px 0 0; color:#b5c0ba; font-size:14px; }
+    h1 { margin:0; font-size:30px; line-height:1.2; } h2 { margin:36px 0 13px; font-size:21px; border-bottom:1px solid var(--line); padding-bottom:8px; } h3 { margin:24px 0 7px; font-size:16px; }
+    main { max-width:1080px; margin:0 auto; padding:22px 24px 70px; }
+    .meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; } .tag { padding:4px 9px; border:1px solid #3d4e44; border-radius:4px; color:#d3ddd7; font-size:11px; }
+    .notice { padding:14px 16px; border-left:4px solid var(--green); background:var(--green-soft); margin:15px 0; } .notice.warn { border-color:var(--amber); background:var(--amber-soft); } .notice.danger { border-color:var(--red); background:var(--red-soft); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; } .cell { padding:14px; border:1px solid var(--line); border-radius:5px; background:var(--panel); } .cell strong { display:block; font-size:13px; } .cell small { display:block; margin-top:4px; color:var(--muted); }
+    table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); font-size:13px; } th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { color:var(--muted); font-size:11px; font-weight:600; background:#f9faf9; }
+    code, pre { font-family:"Cascadia Code",Consolas,monospace; } code { padding:1px 4px; background:#edf0ee; border-radius:3px; font-size:0.9em; } pre { padding:13px 15px; overflow:auto; color:#e3ebe6; background:#17201c; border-radius:5px; font-size:12px; line-height:1.55; }
+    ol,ul { padding-left:23px; } li { margin:4px 0; } a { color:var(--green); } .small { color:var(--muted); font-size:12px; }
+    .flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:16px 0; } .flow div { padding:12px; text-align:center; border:1px solid var(--line); background:var(--panel); border-radius:5px; font-size:12px; } .flow b { display:block; color:var(--green); font-size:11px; margin-bottom:4px; }
+    .toc { columns:2; margin:0; padding:16px 24px; border:1px solid var(--line); background:var(--panel); border-radius:5px; } .toc li { break-inside:avoid; }
+    footer { max-width:1080px; margin:0 auto; padding:0 24px 30px; color:var(--muted); font-size:12px; }
+    @media (max-width:700px) { header { padding:28px 16px; } main { padding:14px 16px 50px; } h1 { font-size:24px; } .grid,.flow { grid-template-columns:1fr; } .toc { columns:1; } table { display:block; overflow:auto; white-space:nowrap; } }
+    @media print { header { color:#000; background:#fff; padding:0 0 20px; border-bottom:2px solid #000; } header p,.tag { color:#000; } main { padding:0; } .notice,table,.cell { break-inside:avoid; } a { color:#000; text-decoration:none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WSL Server Workbench<br><span>管理员手册</span></h1>
+    <p>用于管理 Windows NAT 网络下的 WSL __DISTRO__ SSH 服务器。工作台只绑定本机回环地址；局域网访问通过 Windows TCP 端口转发和 Private/LocalSubnet 防火墙规则实现。</p>
+    <div class="meta"><span class="tag">__DISTRO__</span><span class="tag">WSL2 NAT</span><span class="tag">Dashboard 127.0.0.1:4173</span><span class="tag">SSH LAN __SSH_PORT__</span></div>
+  </header>
+  <main>
+    <ol class="toc">
+      <li><a href="#architecture">架构与边界</a></li>
+      <li><a href="#start">启动与查看</a></li>
+      <li><a href="#daily">日常操作</a></li>
+      <li><a href="#health">周期自检</a></li>
+      <li><a href="#logs">访问记录</a></li>
+      <li><a href="#troubleshoot">问题排查</a></li>
+      <li><a href="#security">安全与回滚</a></li>
+      <li><a href="#files">文件清单</a></li>
+    </ol>
+
+    <h2 id="architecture">1. 架构与边界</h2>
+    <div class="flow"><div><b>其他电脑</b>LAN SSH 客户端</div><div><b>Windows</b>监听 TCP __SSH_PORT__</div><div><b>portproxy</b>转发至 127.0.0.1:22</div><div><b>WSL __DISTRO__</b>sshd:22</div></div>
+    <div class="grid"><div class="cell"><strong>工作台</strong><small><code>127.0.0.1:4173</code>，只允许本机浏览器访问。</small></div><div class="cell"><strong>WSL 网络</strong><small>默认 NAT；不要为 Docker 或 SSH 启用 mirrored networking。</small></div><div class="cell"><strong>认证</strong><small>允许 <code>__WSL_USER__</code> 使用密码或公钥登录，root 仍禁止。</small></div></div>
+    <div class="notice warn"><b>动态地址：</b>Windows 有线/WLAN 地址通常来自 DHCP，实际连接前以工作台显示为准。</div>
+
+    <h2 id="start">2. 启动与查看</h2>
+    <p>Windows 登录时的任务会启动 __DISTRO__；用户级 systemd 随后启动工作台和自检 timer。浏览器打开：</p>
+    <pre>http://127.0.0.1:4173</pre>
+    <p>手动查看和重启：</p>
+    <pre>systemctl --user status wsl-server-workbench
+systemctl --user restart wsl-server-workbench
+systemctl --user is-active wsl-server-workbench-health.timer
+systemctl --user list-timers --all | grep wsl-server-workbench</pre>
+    <p>查看服务日志：</p>
+    <pre>journalctl --user -u wsl-server-workbench -f
+journalctl --user -u wsl-server-workbench-health.service --since today</pre>
+
+    <h2 id="daily">3. 日常操作</h2>
+    <h3>查看服务器</h3>
+    <p>工作台顶部显示 SSH、NAT、认证和对外端口；“连接入口”给出每个 Windows LAN 地址的完整 SSH 命令；“安全边界”显示允许用户、认证方式、root 策略和防火墙范围。</p>
+    <h3>修改密码</h3>
+    <p>点击“访问管理 → 修改”。工作台只打开 Windows Terminal 的系统 <code>passwd __WSL_USER__</code>，密码输入发生在终端，不经过网页、Node 进程或日志。</p>
+    <h3>修改/停止端口</h3>
+    <p>输入 <code>1024-65535</code> 的端口并点击“应用”，确认 Windows UAC 后，管理脚本会更新 portproxy 和 Private/LocalSubnet 防火墙规则。点击“停止局域网访问”只停止 Windows 入口，不关闭 WSL 内部 sshd。</p>
+    <p>其他电脑连接格式：</p>
+    <pre>ssh -p __SSH_PORT__ __WSL_USER__@&lt;Windows-LAN-IP&gt;</pre>
+
+    <h2 id="health">4. 周期自检</h2>
+    <p>用户级 timer 默认在 WSL 启动约 90 秒后执行，之后每 5 分钟一次；结果保存最近 7 天。工作台的“周期自检”面板显示最新状态、每个检查项、耗时和最近 24 个结果点。也可点击“立即自检”。</p>
+    <table><thead><tr><th>检查项</th><th>严重级别</th><th>通过条件</th></tr></thead><tbody>
+      <tr><td>工作台 API</td><td>严重</td><td>本地 API 能返回 overview。</td></tr>
+      <tr><td>SSH 服务、默认路由、DNS</td><td>严重</td><td>systemd active、NAT default route 存在、resolver 有 nameserver。</td></tr>
+      <tr><td>Windows portproxy</td><td>严重</td><td>转发存在且 Windows 监听端口可见。</td></tr>
+      <tr><td>防火墙、登录任务、SSH 策略</td><td>警告</td><td>Private/LocalSubnet、登录任务存在、密码-only/root denied/user restricted。</td></tr>
+    </tbody></table>
+    <p>自检原始记录位置：<code>~/.local/state/wsl-server-workbench/health-history.jsonl</code>。其中没有密码或私钥。</p>
+
+    <h2 id="logs">5. 访问记录</h2>
+    <p>日志来自 WSL 的 <code>journalctl -u ssh</code>，页面解析为成功、失败和策略拦截。查看原始记录：</p>
+    <pre>journalctl -u ssh --since '24 hours ago' --no-pager
+journalctl -u ssh -f</pre>
+    <p>当前策略同时允许密码和公钥。建议长期连接使用公钥，密码只用于首次登记、应急登录和修改密码。</p>
+
+    <h2 id="troubleshoot">6. 问题排查</h2>
+    <h3>工作台页面打不开</h3>
+    <ol><li>检查服务：<code>systemctl --user is-active wsl-server-workbench</code>。</li><li>检查监听：<code>ss -lntp | grep 4173</code>，应为 <code>127.0.0.1:4173</code>。</li><li>检查 API：<code>curl http://127.0.0.1:4173/api/overview</code>。</li><li>若 __DISTRO__ 未运行，从 Windows PowerShell 执行 <code>wsl -d __DISTRO__</code> 后再重试。</li></ol>
+    <h3>自检显示 SSH 失败</h3>
+    <pre>systemctl status ssh --no-pager
+sudo sshd -t
+cat /etc/ssh/sshd_config.d/99-server.conf
+sudo systemctl reload ssh.service</pre>
+    <p>当前应看到 <code>PasswordAuthentication yes</code>、<code>PubkeyAuthentication yes</code>、<code>PermitRootLogin no</code>、<code>AllowUsers __WSL_USER__</code>。</p>
+    <h3>局域网连接超时</h3>
+    <ol><li>在工作台确认 Windows 监听端口和地址没有变化。</li><li>在 Windows PowerShell 检查：<code>netsh interface portproxy show v4tov4</code>。</li><li>确认网络配置为 Private，防火墙规则的 RemoteAddress 是 <code>LocalSubnet</code>。</li><li>客户端与服务器必须在同一可互通网段；某些公司 WLAN 会启用客户端隔离。</li><li>不要把 WSL 的 <code>172.30.*</code> 地址给其他电脑使用；那是 NAT 内部地址。</li></ol>
+    <h3>出现 mirrored networking、无 default route 或 DNS 断链</h3>
+    <div class="notice danger">不要继续修补 mirrored 模式。恢复默认 NAT：在 Windows PowerShell 将活动 <code>%USERPROFILE%\.wslconfig</code> 移走，执行 <code>wsl --shutdown</code>，再启动 __DISTRO__。确认 <code>ip route</code> 有 <code>default via</code>、<code>/etc/resolv.conf</code> 可读后再检查工作台。</div>
+    <h3>Docker 拉取失败</h3>
+    <p>Docker Engine 状态与 Docker Hub 网络是两件事。公司网络可能污染 Docker DNS 或重置连接；不要为了 Docker Hub 修改 WSL 全局 DNS或切换 mirrored。切换网络或配置经确认的 Docker daemon 代理。</p>
+
+    <h2 id="security">7. 安全与回滚</h2>
+    <ul><li>工作台本身只绑定回环地址；不要用额外 portproxy 把 <code>4173</code> 暴露到 LAN。</li><li>局域网 SSH 入口只允许 Private 网络和 LocalSubnet；不要把防火墙 RemoteAddress 改成 Any，除非有明确的公网边界和额外防护。</li><li>密码认证必须使用高强度、唯一的 WSL 密码；不要在网页、脚本、聊天或日志中记录它。</li><li>停止入口：工作台按钮或管理员 PowerShell 执行 <code>&amp; "$env:USERPROFILE\.wsl-server\Configure-WslSshLan.ps1" -Disable</code>。</li><li>完整回滚：管理员 PowerShell 执行 <code>&amp; "$env:USERPROFILE\.wsl-server\Configure-WslSshLan.ps1" -Remove</code>。</li></ul>
+
+    <h2 id="files">8. 文件清单</h2>
+    <table><thead><tr><th>路径</th><th>用途</th></tr></thead><tbody>
+      <tr><td><code>~/wsl-server-workbench</code></td><td>工作台应用、前端、健康检查器和本手册。</td></tr>
+      <tr><td><code>~/.config/systemd/user/wsl-server-workbench.service</code></td><td>工作台用户服务。</td></tr>
+      <tr><td><code>~/.config/systemd/user/wsl-server-workbench-health.timer</code></td><td>5 分钟自检定时器。</td></tr>
+      <tr><td><code>/etc/ssh/sshd_config.d/99-server.conf</code></td><td>SSH 密码-only、禁止 root、公钥关闭策略。</td></tr>
+      <tr><td><code>C:\Users\__WINDOWS_USER__\.wsl-server\Configure-WslSshLan.ps1</code></td><td>管理员端口、防火墙与启动任务管理脚本。</td></tr>
+      <tr><td><code>~/.local/state/wsl-server-workbench/</code></td><td>自检历史；不含凭据。</td></tr>
+    </tbody></table>
+  </main>
+  <footer>本手册随 WSL Server Workbench 保存在本机，不依赖外部网站。生成日期：2026-08-06。</footer>
+</body>
+</html>

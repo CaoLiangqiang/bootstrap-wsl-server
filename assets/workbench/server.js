@@ -1,0 +1,401 @@
+'use strict';
+
+const http = require('node:http');
+const path = require('node:path');
+const { readFile } = require('node:fs/promises');
+const os = require('node:os');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
+const host = '127.0.0.1';
+const port = Number.parseInt(process.env.PORT || '4173', 10);
+const publicRoot = path.join(__dirname, 'public');
+const lucideBundle = path.join(publicRoot, 'vendor', 'lucide.min.js');
+const powershell = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+const windowsStateScript = path.join(__dirname, 'scripts', 'Get-WindowsNetworkState.ps1');
+const windowsManagerScript = 'C:\\Users\\__WINDOWS_USER__\\.wsl-server\\Configure-WslSshLan.ps1';
+const windowsTerminal = '/mnt/c/Users/__WINDOWS_USER__/AppData/Local/Microsoft/WindowsApps/wt.exe';
+const windowsWsl = 'C:\\Windows\\System32\\wsl.exe';
+const healthCheckScript = path.join(__dirname, 'scripts', 'health-check.js');
+const stateRoot = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
+const healthHistoryPath = path.join(stateRoot, 'wsl-server-workbench', 'health-history.jsonl');
+const windowsStateCache = { expiresAt: 0, pending: null, value: null };
+
+const mimeTypes = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml'
+};
+
+function run(file, args, options = {}) {
+  return execFileAsync(file, args, {
+    timeout: options.timeout || 8000,
+    maxBuffer: 1024 * 1024,
+    windowsHide: true
+  });
+}
+
+async function runText(file, args, options) {
+  const { stdout } = await run(file, args, options);
+  return stdout.trim();
+}
+
+async function attempt(task, fallback) {
+  try {
+    return await task();
+  } catch {
+    return fallback;
+  }
+}
+
+function parseSshConfig(text) {
+  const config = {};
+  for (const line of text.split('\n')) {
+    const match = line.trim().match(/^(\S+)\s+(.+)$/);
+    if (match) config[match[1].toLowerCase()] = match[2].trim();
+  }
+  return {
+    allowUsers: config.allowusers?.split(/\s+/) || [],
+    passwordAuthentication: config.passwordauthentication === 'yes',
+    permitRootLogin: config.permitrootlogin || 'unknown',
+    publicKeyAuthentication: config.pubkeyauthentication === 'yes'
+  };
+}
+
+function parseResolver(text) {
+  const nameservers = [];
+  let search = [];
+  for (const line of text.split('\n')) {
+    const clean = line.trim();
+    if (clean.startsWith('nameserver ')) nameservers.push(clean.split(/\s+/)[1]);
+    if (clean.startsWith('search ')) search = clean.split(/\s+/).slice(1);
+  }
+  return { nameservers, search };
+}
+
+async function getWindowsState() {
+  if (windowsStateCache.value && Date.now() < windowsStateCache.expiresAt) {
+    return windowsStateCache.value;
+  }
+  if (windowsStateCache.pending) return windowsStateCache.pending;
+
+  windowsStateCache.pending = readWindowsState();
+  try {
+    const value = await windowsStateCache.pending;
+    windowsStateCache.value = value;
+    windowsStateCache.expiresAt = Date.now() + 15000;
+    return value;
+  } finally {
+    windowsStateCache.pending = null;
+  }
+}
+
+async function readWindowsState() {
+  const output = await runText(powershell, [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', windowsStateScript
+  ], { timeout: 12000 });
+  return JSON.parse(output);
+}
+
+async function getOverview() {
+  const [
+    sshStatus,
+    sshSocket,
+    dockerStatus,
+    addressesRaw,
+    routeRaw,
+    resolverRaw,
+    sshConfigRaw,
+    windows
+  ] = await Promise.all([
+    attempt(() => runText('systemctl', ['is-active', 'ssh']), 'unknown'),
+    attempt(() => runText('systemctl', ['is-enabled', 'ssh.socket']), 'unknown'),
+    attempt(() => runText('systemctl', ['is-active', 'docker']), 'unavailable'),
+    attempt(() => runText('ip', ['-j', '-4', 'address', 'show', 'eth0']), '[]'),
+    attempt(() => runText('ip', ['-j', '-4', 'route', 'show', 'default']), '[]'),
+    attempt(() => readFile('/etc/resolv.conf', 'utf8'), ''),
+    attempt(() => readFile('/etc/ssh/sshd_config.d/99-server.conf', 'utf8'), ''),
+    attempt(() => getWindowsState(), {
+      error: 'Windows state unavailable',
+      interfaces: [],
+      portProxy: null,
+      firewall: null,
+      startupTask: null
+    })
+  ]);
+
+  const addressData = JSON.parse(addressesRaw);
+  const routeData = JSON.parse(routeRaw);
+  const eth0 = addressData[0] || {};
+  const ipv4 = (eth0.addr_info || [])
+    .filter((item) => item.family === 'inet')
+    .map((item) => ({ address: item.local, prefix: item.prefixlen }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    hostname: await attempt(() => runText('hostname', []), 'unknown'),
+    network: {
+      defaultRoute: routeData[0]?.gateway || null,
+      interface: eth0.ifname || 'eth0',
+      ipv4,
+      mode: routeData.length ? 'NAT' : 'offline',
+      resolver: parseResolver(resolverRaw)
+    },
+    services: {
+      docker: dockerStatus,
+      ssh: sshStatus,
+      sshSocket
+    },
+    sshPolicy: parseSshConfig(sshConfigRaw),
+    windows
+  };
+}
+
+function parseSshEvent(entry) {
+  const message = entry.MESSAGE || '';
+  const timestamp = Number(entry.__REALTIME_TIMESTAMP || 0) / 1000;
+  let match = message.match(/^Accepted (\S+) for (\S+) from (\S+) port (\d+)/);
+  if (match) {
+    return {
+      timestamp,
+      status: 'success',
+      method: match[1],
+      user: match[2],
+      address: match[3],
+      port: Number(match[4]),
+      message: 'Login accepted'
+    };
+  }
+
+  match = message.match(/^Failed (\S+) for (?:invalid user )?(\S+) from (\S+) port (\d+)/);
+  if (match) {
+    return {
+      timestamp,
+      status: 'failed',
+      method: match[1],
+      user: match[2],
+      address: match[3],
+      port: Number(match[4]),
+      message: 'Login rejected'
+    };
+  }
+
+  match = message.match(/^User (\S+) from (\S+) not allowed/);
+  if (match) {
+    return {
+      timestamp,
+      status: 'blocked',
+      method: 'policy',
+      user: match[1],
+      address: match[2],
+      port: null,
+      message: 'User blocked by policy'
+    };
+  }
+
+  match = message.match(/^Invalid user (\S+) from (\S+) port (\d+)/);
+  if (match) {
+    return {
+      timestamp,
+      status: 'blocked',
+      method: 'invalid-user',
+      user: match[1],
+      address: match[2],
+      port: Number(match[3]),
+      message: 'Invalid user'
+    };
+  }
+
+  return null;
+}
+
+async function getLogs(hours) {
+  const output = await runText('journalctl', [
+    '-u', 'ssh',
+    '--since', `${hours} hours ago`,
+    '--no-pager',
+    '-o', 'json',
+    '-n', '500'
+  ], { timeout: 10000 });
+
+  const events = output
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return parseSshEvent(JSON.parse(line));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .reverse()
+    .slice(0, 150);
+
+  const summary = { success: 0, failed: 0, blocked: 0 };
+  for (const event of events) summary[event.status] += 1;
+  return { events, hours, summary };
+}
+
+async function getHealthHistory(limit) {
+  let content;
+  try {
+    content = await readFile(healthHistoryPath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return { entries: [] };
+    throw error;
+  }
+  const entries = content
+    .split('\n')
+    .filter(Boolean)
+    .slice(-limit)
+    .map((line) => JSON.parse(line))
+    .reverse();
+  return { entries };
+}
+
+async function runHealthCheck() {
+  const output = await runText(process.execPath, [healthCheckScript], { timeout: 35000 });
+  return JSON.parse(output.split('\n').filter(Boolean).at(-1));
+}
+
+function sendJson(response, status, value) {
+  response.writeHead(status, {
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  response.end(JSON.stringify(value));
+}
+
+function validActionRequest(request) {
+  const hostHeader = request.headers.host || '';
+  return request.headers['x-workbench-action'] === 'confirm'
+    && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(hostHeader);
+}
+
+async function readJsonBody(request) {
+  let body = '';
+  for await (const chunk of request) {
+    body += chunk;
+    if (body.length > 4096) throw new Error('Request body too large');
+  }
+  return body ? JSON.parse(body) : {};
+}
+
+async function launchPasswordTerminal() {
+  await run(windowsTerminal, [
+    'new-tab',
+    '--title', 'Change WSL password',
+    windowsWsl,
+    '-d', '__DISTRO__',
+    '--', 'passwd', '__WSL_USER__'
+  ], { timeout: 5000 });
+}
+
+async function launchPortManager(portValue, disable) {
+  const scriptArgs = disable
+    ? `'-NoProfile','-ExecutionPolicy','Bypass','-File','${windowsManagerScript}','-Distro','__DISTRO__','-Disable'`
+    : `'-NoProfile','-ExecutionPolicy','Bypass','-File','${windowsManagerScript}','-Distro','__DISTRO__','-ListenPort','${portValue}'`;
+  const command = [
+    `Start-Process -FilePath 'powershell.exe'`,
+    `-Verb RunAs`,
+    `-ArgumentList @(${scriptArgs})`
+  ].join(' ');
+  await run(powershell, ['-NoProfile', '-Command', command], { timeout: 5000 });
+}
+
+async function serveStatic(request, response, pathname) {
+  if (pathname === '/vendor/lucide.js') {
+    const content = await readFile(lucideBundle);
+    response.writeHead(200, {
+      'Cache-Control': 'public, max-age=86400',
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    response.end(content);
+    return;
+  }
+  const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
+  const filePath = path.resolve(publicRoot, relative);
+  if (!filePath.startsWith(`${publicRoot}${path.sep}`)) {
+    response.writeHead(403).end('Forbidden');
+    return;
+  }
+  try {
+    const content = await readFile(filePath);
+    response.writeHead(200, {
+      'Cache-Control': 'no-cache',
+      'Content-Type': mimeTypes[path.extname(filePath)] || 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    response.end(content);
+  } catch {
+    response.writeHead(404).end('Not found');
+  }
+}
+
+const server = http.createServer(async (request, response) => {
+  const url = new URL(request.url, `http://${request.headers.host || host}`);
+  try {
+    if (request.method === 'GET' && url.pathname === '/api/overview') {
+      sendJson(response, 200, await getOverview());
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/logs') {
+      const requestedHours = Number.parseInt(url.searchParams.get('hours') || '24', 10);
+      const hours = [1, 6, 24, 168].includes(requestedHours) ? requestedHours : 24;
+      sendJson(response, 200, await getLogs(hours));
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/health') {
+      const requestedLimit = Number.parseInt(url.searchParams.get('limit') || '24', 10);
+      const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 288) : 24;
+      sendJson(response, 200, await getHealthHistory(limit));
+      return;
+    }
+    if (request.method === 'POST' && url.pathname.startsWith('/api/actions/')) {
+      if (!validActionRequest(request)) {
+        sendJson(response, 403, { error: 'Local action confirmation missing' });
+        return;
+      }
+      const body = await readJsonBody(request);
+      if (url.pathname === '/api/actions/password') {
+        await launchPasswordTerminal();
+        sendJson(response, 202, { message: 'Password terminal opened' });
+        return;
+      }
+      if (url.pathname === '/api/actions/health-check') {
+        sendJson(response, 200, await runHealthCheck());
+        return;
+      }
+      if (url.pathname === '/api/actions/port') {
+        const disable = body.mode === 'disable';
+        const newPort = Number.parseInt(body.port, 10);
+        if (!disable && (!Number.isInteger(newPort) || newPort < 1024 || newPort > 65535)) {
+          sendJson(response, 400, { error: 'Port must be between 1024 and 65535' });
+          return;
+        }
+        await launchPortManager(newPort, disable);
+        sendJson(response, 202, { message: 'Administrator prompt opened' });
+        return;
+      }
+    }
+    if (request.method === 'GET') {
+      await serveStatic(request, response, url.pathname);
+      return;
+    }
+    response.writeHead(405).end('Method not allowed');
+  } catch (error) {
+    sendJson(response, 500, { error: error.message || 'Unexpected error' });
+  }
+});
+
+server.listen(port, host, () => {
+  console.log(`WSL Server Workbench listening on http://${host}:${port}`);
+});

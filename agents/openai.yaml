@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bootstrap WSL Server"
+  short_description: "Configure a secure WSL SSH server on Windows"
+  default_prompt: "Use $bootstrap-wsl-server to configure this Windows computer as a reusable WSL SSH server."

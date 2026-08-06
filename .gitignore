@@ -1,0 +1,5 @@
+*.tmp
+server-state.json
+health-current.json
+health-history.jsonl
+.DS_Store

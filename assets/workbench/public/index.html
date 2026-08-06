@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>WSL Server Workbench</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-block">
+      <div class="brand-mark" aria-hidden="true"><i data-lucide="terminal-square"></i></div>
+      <div>
+        <h1>WSL Server Workbench</h1>
+        <p id="host-label">正在读取工作站状态</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="live-state" id="live-state"><span class="pulse"></span> 本地连接</span>
+      <a class="manual-link" href="/admin-manual.html" target="_blank" title="打开管理员手册">
+        <i data-lucide="book-open"></i><span>手册</span>
+      </a>
+      <a class="manual-link" href="/client-access-manual.html" target="_blank" title="打开访问用户手册">
+        <i data-lucide="users"></i><span>访问手册</span>
+      </a>
+      <button class="icon-button" id="refresh-button" title="刷新状态" aria-label="刷新状态">
+        <i data-lucide="refresh-cw"></i>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="status-strip" aria-label="核心状态">
+      <article class="metric">
+        <div class="metric-icon green"><i data-lucide="server"></i></div>
+        <div><span>SSH 服务</span><strong id="ssh-status">读取中</strong></div>
+      </article>
+      <article class="metric">
+        <div class="metric-icon blue"><i data-lucide="network"></i></div>
+        <div><span>网络模式</span><strong id="network-mode">读取中</strong></div>
+      </article>
+      <article class="metric">
+        <div class="metric-icon amber"><i data-lucide="shield-check"></i></div>
+        <div><span>认证方式</span><strong id="auth-mode">读取中</strong></div>
+      </article>
+      <article class="metric">
+        <div class="metric-icon ink"><i data-lucide="door-open"></i></div>
+        <div><span>对外端口</span><strong id="public-port">读取中</strong></div>
+      </article>
+    </section>
+
+    <section class="workspace-grid">
+      <div class="primary-column">
+        <article class="panel connection-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">LAN ENDPOINTS</p>
+              <h2>连接入口</h2>
+            </div>
+            <span class="status-pill" id="proxy-pill">检测中</span>
+          </div>
+          <div class="endpoint-list" id="endpoint-list">
+            <div class="skeleton wide"></div>
+            <div class="skeleton wide"></div>
+          </div>
+        </article>
+
+        <article class="panel access-panel">
+          <div class="panel-heading access-heading">
+            <div>
+              <p class="eyebrow">SSH JOURNAL</p>
+              <h2>访问记录</h2>
+            </div>
+            <div class="segmented" role="group" aria-label="日志时间范围">
+              <button data-hours="1">1h</button>
+              <button data-hours="6">6h</button>
+              <button class="active" data-hours="24">24h</button>
+              <button data-hours="168">7d</button>
+            </div>
+          </div>
+          <div class="access-summary">
+            <div><span class="summary-dot success"></span><strong id="success-count">0</strong><small>成功</small></div>
+            <div><span class="summary-dot failed"></span><strong id="failed-count">0</strong><small>失败</small></div>
+            <div><span class="summary-dot blocked"></span><strong id="blocked-count">0</strong><small>拦截</small></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>结果</th><th>时间</th><th>用户</th><th>来源地址</th><th>方式</th></tr>
+              </thead>
+              <tbody id="access-body">
+                <tr><td colspan="5" class="empty-cell">正在载入日志</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <aside class="side-column">
+        <article class="panel control-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ACCESS CONTROL</p>
+              <h2>访问管理</h2>
+            </div>
+            <i class="heading-icon" data-lucide="settings-2"></i>
+          </div>
+
+          <div class="control-group">
+            <div class="control-copy">
+              <span class="control-icon"><i data-lucide="key-round"></i></span>
+              <div><strong>登录密码</strong><p>通过系统终端安全修改</p></div>
+            </div>
+            <button class="secondary-button" id="password-button">修改</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="port-control">
+            <label for="port-input">Windows 监听端口</label>
+            <div class="input-row">
+              <input id="port-input" type="number" min="1024" max="65535" inputmode="numeric" value="__SSH_PORT__">
+              <button class="primary-button" id="port-button">应用</button>
+            </div>
+            <p>修改将触发 Windows UAC，并同步防火墙规则。</p>
+          </div>
+
+          <button class="danger-button" id="disable-button">
+            <i data-lucide="power"></i> 停止局域网访问
+          </button>
+        </article>
+
+        <article class="panel health-panel">
+          <div class="panel-heading compact">
+            <div>
+              <p class="eyebrow">HEALTH MONITOR</p>
+              <h2>周期自检</h2>
+            </div>
+            <button class="compact-action" id="health-check-button" title="立即执行一次自检">
+              <i data-lucide="scan-line"></i><span>立即自检</span>
+            </button>
+          </div>
+          <div class="health-summary">
+            <span class="health-indicator" id="health-indicator"></span>
+            <div><strong id="health-state">尚未检查</strong><p id="health-time">等待第一次定时检查</p></div>
+          </div>
+          <ul class="health-checks" id="health-checks">
+            <li class="muted-row">正在读取检查记录</li>
+          </ul>
+          <div class="health-history" id="health-history" aria-label="最近检查历史"></div>
+        </article>
+
+        <article class="panel policy-panel">
+          <div class="panel-heading compact">
+            <div>
+              <p class="eyebrow">SECURITY POLICY</p>
+              <h2>安全边界</h2>
+            </div>
+          </div>
+          <ul class="policy-list">
+            <li><i data-lucide="check"></i><span>允许用户</span><strong id="allowed-users">—</strong></li>
+            <li><i data-lucide="check"></i><span>密码认证</span><strong id="password-policy">—</strong></li>
+            <li><i data-lucide="check"></i><span>公钥认证</span><strong id="key-policy">—</strong></li>
+            <li><i data-lucide="check"></i><span>Root 登录</span><strong id="root-policy">—</strong></li>
+            <li><i data-lucide="check"></i><span>防火墙范围</span><strong id="firewall-scope">—</strong></li>
+          </ul>
+        </article>
+
+        <article class="panel network-panel">
+          <div class="panel-heading compact">
+            <div>
+              <p class="eyebrow">WSL NETWORK</p>
+              <h2>网络详情</h2>
+            </div>
+          </div>
+          <dl>
+            <div><dt>WSL 地址</dt><dd id="wsl-address">—</dd></div>
+            <div><dt>默认网关</dt><dd id="default-route">—</dd></div>
+            <div><dt>DNS</dt><dd id="dns-address">—</dd></div>
+            <div><dt>Docker</dt><dd id="docker-status">—</dd></div>
+            <div><dt>登录任务</dt><dd id="startup-task">—</dd></div>
+          </dl>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/vendor/lucide.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
