@@ -7,8 +7,9 @@
 3. Public-key enrollment
 4. Password and port management
 5. Workbench and health history
-6. Client configuration
-7. Rollback
+6. Manual regeneration and delivery
+7. Client configuration
+8. Rollback
 
 ## 1. Daily status
 
@@ -89,7 +90,33 @@ Health files are stored under `~/.local/state/wsl-server-workbench` with private
 
 The web process never receives passwords. Password changes open a terminal. Port changes open an elevated Windows PowerShell process and require UAC.
 
-## 6. Client configuration
+## 6. Manual regeneration and delivery
+
+Regenerate the standalone manuals after changing any connection parameter:
+
+```bash
+bash scripts/render-manuals.sh \
+  --windows-user WINDOWS_USER \
+  --windows-hostname WINDOWS_HOSTNAME \
+  --distro Ubuntu \
+  --ssh-port 2222
+```
+
+Open the host manual locally:
+
+```text
+~/wsl-server-manuals/wsl-server-host-manual.html
+```
+
+Distribute only the client manual to users:
+
+```text
+~/wsl-server-manuals/wsl-server-client-manual.html
+```
+
+Review the generated connection values before distribution. Dynamic LAN addresses remain placeholders by design and must be communicated from current Windows network state.
+
+## 7. Client configuration
 
 Example client `~/.ssh/config`:
 
@@ -110,7 +137,7 @@ ssh -o BatchMode=yes -o IdentityAgent=none my-wsl-server 'printf WSL_SSH_OK'
 
 For long-running work, use `tmux` inside WSL. SSH keepalives detect dead transports but do not preserve a shell after a network interruption.
 
-## 7. Rollback
+## 8. Rollback
 
 Disable LAN access but retain the startup task and state:
 
@@ -133,4 +160,3 @@ systemctl --user disable --now \
 ```
 
 Stopping LAN exposure does not require uninstalling OpenSSH or deleting keys. Keep rollback actions narrow.
-

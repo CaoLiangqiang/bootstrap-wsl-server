@@ -60,13 +60,13 @@ ssh -p __SSH_PORT__ __WSL_USER__@&lt;Windows-LAN-IP&gt;</pre>
     <h3>Connection timed out</h3><p>确认地址是 Windows LAN 地址，不是 WSL 的 <code>172.30.*</code> 地址；确认客户端与服务器在同一网段；让管理员检查工作台“对外端口”和 Windows Private 防火墙。</p>
     <h3>Connection refused</h3><p>通常表示 WSL/sshd 未运行或 Windows portproxy 目标失效。让管理员打开工作台查看 SSH 和转发状态。</p>
     <h3>Permission denied (publickey,password)</h3><p>确认使用的是对应私钥、用户名为 <code>__WSL_USER__</code>、管理员已登记匹配的 `.pub` 文件。先按“分层验证”核对指纹并用显式 <code>-i</code>、<code>IdentitiesOnly=yes</code>、<code>IdentityAgent=none</code> 重试。不要因看到 <code>Server accepts key</code> 就立即修改服务器：如果随后出现 <code>sign_and_send_pubkey: signing using ssh-ed25519</code> 仍失败，优先检查私钥是否带口令、<code>BatchMode</code> 是否无法解锁、实际身份文件和 SSH Agent。PowerShell 5.1 中误用 <code>-N=</code> 可能把口令设成 <code>=</code>；可用 <code>ssh-keygen -y -P = -f &lt;private-key&gt;</code> 在用户 Windows 客户端验证该假设。不要分享私钥或包含敏感信息的完整调试日志；只有管理员在服务端日志中看到对应失败记录时，才需要进一步检查 sshd 实例和认证策略。</p>
-    <p>若已确认口令被误设为单字符 <code>=</code>，可在 Windows PowerShell 5.1 使用 stop-parsing 方式移除口令：</p>
-    <pre>ssh-keygen.exe --% -p -f C:\Users\__WINDOWS_USER__\.ssh\id_ed25519_wsl_server -P = -N ""</pre>
-    <p>修改后再次核对公钥指纹。本次真实接入中，修改前后均为 <code>SHA256:tgE1b+peA3zbPBkIN1gGp/YNXMnYr1RGHVv9D5nX9NQ</code>，最终隔离测试输出 <code>CODEX_SSH_OK</code>；服务器此前只记录 <code>Connection closed ... [preauth]</code>，这是客户端未能在 BatchMode 中解锁私钥造成的误导性症状。</p>
+    <p>若确认私钥口令设置有误，请在用户 Windows 客户端交互修改；按提示输入旧口令，再根据策略设置新口令：</p>
+    <pre>ssh-keygen -p -f "$env:USERPROFILE\.ssh\id_ed25519_wsl_server"</pre>
+    <p>修改后再次从私钥导出公钥并核对完整 SHA256 指纹，再运行隔离测试。服务端只记录 <code>Connection closed ... [preauth]</code> 时，也可能是客户端无法在 BatchMode 中解锁私钥；应结合客户端详细日志和服务端同一时间的记录判断。</p>
     <h3>网络或 DNS 异常</h3><p>服务器使用默认 WSL NAT。不要在客户端要求服务器启用 mirrored networking；那曾导致服务器无默认路由和 DNS 断链。</p>
     <h2>8. 安全要求</h2>
     <ul><li>每位访问者使用自己的密钥，不共享私钥。</li><li>私钥设置为仅本人可读：Linux/macOS 使用 <code>chmod 600 ~/.ssh/id_ed25519_wsl_server</code>。</li><li>离职、设备丢失或密钥泄露时，立即通知管理员撤销对应公钥。</li><li>不要把服务器端口转发到公网；当前防火墙设计仅允许 Private/LocalSubnet。</li></ul>
   </main>
-  <footer>WSL Server Workbench · 访问用户手册 · 以管理员实时提供的地址和端口为准</footer>
+  <footer>Bootstrap WSL Server · 客户端访问手册 · 生成日期：__GENERATED_DATE__ · 以管理员实时提供的地址和端口为准</footer>
 </body>
 </html>

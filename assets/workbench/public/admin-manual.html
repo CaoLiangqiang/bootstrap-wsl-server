@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WSL Server Workbench · 管理员手册</title>
+  <title>WSL 服务器主机端管理员手册</title>
   <style>
     :root { --ink:#17201c; --muted:#68736d; --line:#dce2df; --bg:#f4f6f5; --panel:#fff; --green:#177a4c; --green-soft:#e7f4ed; --amber:#a36413; --amber-soft:#fff2dc; --red:#b33c38; --red-soft:#fbeceb; font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
     * { box-sizing:border-box; } body { margin:0; line-height:1.65; }
@@ -26,7 +26,7 @@
 </head>
 <body>
   <header>
-    <h1>WSL Server Workbench<br><span>管理员手册</span></h1>
+    <h1>WSL 服务器<br><span>主机端管理员手册</span></h1>
     <p>用于管理 Windows NAT 网络下的 WSL __DISTRO__ SSH 服务器。工作台只绑定本机回环地址；局域网访问通过 Windows TCP 端口转发和 Private/LocalSubnet 防火墙规则实现。</p>
     <div class="meta"><span class="tag">__DISTRO__</span><span class="tag">WSL2 NAT</span><span class="tag">Dashboard 127.0.0.1:4173</span><span class="tag">SSH LAN __SSH_PORT__</span></div>
   </header>
@@ -75,7 +75,7 @@ journalctl --user -u wsl-server-workbench-health.service --since today</pre>
       <tr><td>工作台 API</td><td>严重</td><td>本地 API 能返回 overview。</td></tr>
       <tr><td>SSH 服务、默认路由、DNS</td><td>严重</td><td>systemd active、NAT default route 存在、resolver 有 nameserver。</td></tr>
       <tr><td>Windows portproxy</td><td>严重</td><td>转发存在且 Windows 监听端口可见。</td></tr>
-      <tr><td>防火墙、登录任务、SSH 策略</td><td>警告</td><td>Private/LocalSubnet、登录任务存在、密码-only/root denied/user restricted。</td></tr>
+      <tr><td>防火墙、登录任务、SSH 策略</td><td>警告</td><td>Private/LocalSubnet、登录任务存在、密码和公钥启用、root 禁止、用户受限。</td></tr>
     </tbody></table>
     <p>自检原始记录位置：<code>~/.local/state/wsl-server-workbench/health-history.jsonl</code>。其中没有密码或私钥。</p>
 
@@ -91,7 +91,7 @@ journalctl -u ssh -f</pre>
     <h3>自检显示 SSH 失败</h3>
     <pre>systemctl status ssh --no-pager
 sudo sshd -t
-cat /etc/ssh/sshd_config.d/99-server.conf
+cat /etc/ssh/sshd_config.d/99-wsl-server.conf
 sudo systemctl reload ssh.service</pre>
     <p>当前应看到 <code>PasswordAuthentication yes</code>、<code>PubkeyAuthentication yes</code>、<code>PermitRootLogin no</code>、<code>AllowUsers __WSL_USER__</code>。</p>
     <h3>局域网连接超时</h3>
@@ -109,11 +109,13 @@ sudo systemctl reload ssh.service</pre>
       <tr><td><code>~/wsl-server-workbench</code></td><td>工作台应用、前端、健康检查器和本手册。</td></tr>
       <tr><td><code>~/.config/systemd/user/wsl-server-workbench.service</code></td><td>工作台用户服务。</td></tr>
       <tr><td><code>~/.config/systemd/user/wsl-server-workbench-health.timer</code></td><td>5 分钟自检定时器。</td></tr>
-      <tr><td><code>/etc/ssh/sshd_config.d/99-server.conf</code></td><td>SSH 密码-only、禁止 root、公钥关闭策略。</td></tr>
+      <tr><td><code>/etc/ssh/sshd_config.d/99-wsl-server.conf</code></td><td>SSH 密码和公钥认证、禁止 root、允许用户及保活策略。</td></tr>
       <tr><td><code>C:\Users\__WINDOWS_USER__\.wsl-server\Configure-WslSshLan.ps1</code></td><td>管理员端口、防火墙与启动任务管理脚本。</td></tr>
       <tr><td><code>~/.local/state/wsl-server-workbench/</code></td><td>自检历史；不含凭据。</td></tr>
+      <tr><td><code>~/wsl-server-manuals/wsl-server-host-manual.html</code></td><td>独立主机端管理员手册。</td></tr>
+      <tr><td><code>~/wsl-server-manuals/wsl-server-client-manual.html</code></td><td>可分发给访问用户的客户端手册。</td></tr>
     </tbody></table>
   </main>
-  <footer>本手册随 WSL Server Workbench 保存在本机，不依赖外部网站。生成日期：2026-08-06。</footer>
+  <footer>本手册由 Bootstrap WSL Server Skill 生成，不依赖外部网站。生成日期：__GENERATED_DATE__。</footer>
 </body>
 </html>

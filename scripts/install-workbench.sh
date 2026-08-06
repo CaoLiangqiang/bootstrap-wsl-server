@@ -5,13 +5,14 @@ windows_user=''
 windows_hostname=''
 distro=Ubuntu
 ssh_port=2222
-install_dir="$HOME/.local/share/wsl-server-workbench"
+install_dir="$HOME/wsl-server-workbench"
+manual_dir="$HOME/wsl-server-manuals"
 render_only=''
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
   cat <<'EOF'
-Usage: install-workbench.sh --windows-user USER [--windows-hostname NAME] [--distro NAME] [--ssh-port PORT] [--install-dir PATH] [--render-only PATH]
+Usage: install-workbench.sh --windows-user USER [--windows-hostname NAME] [--distro NAME] [--ssh-port PORT] [--install-dir PATH] [--manual-dir PATH] [--render-only PATH]
 
 Installs the loopback-only dashboard, its five-minute health timer, and Windows
 management scripts. Requires Node.js and a mounted Windows C: drive.
@@ -25,6 +26,7 @@ while [ "$#" -gt 0 ]; do
     --distro) distro="${2:-}"; shift 2 ;;
     --ssh-port) ssh_port="${2:-}"; shift 2 ;;
     --install-dir) install_dir="${2:-}"; shift 2 ;;
+    --manual-dir) manual_dir="${2:-}"; shift 2 ;;
     --render-only) render_only="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -68,7 +70,8 @@ for file in $(find "$stage" -type f \( -name '*.js' -o -name '*.html' -o -name '
     -e "s|__WINDOWS_USER__|$(escape_sed "$windows_user")|g" \
     -e "s|__DISTRO__|$(escape_sed "$distro")|g" \
     -e "s|__SSH_PORT__|$ssh_port|g" \
-    -e "s|__WINDOWS_HOSTNAME__|$(escape_sed "$windows_hostname")|g" "$file"
+    -e "s|__WINDOWS_HOSTNAME__|$(escape_sed "$windows_hostname")|g" \
+    -e "s|__GENERATED_DATE__|$(date +%F)|g" "$file"
 done
 
 if [ -n "$render_only" ]; then
@@ -80,6 +83,7 @@ fi
 
 install -d -m 0755 "$install_dir"
 cp -R "$stage/." "$install_dir/"
+install -m 0755 "$skill_dir/scripts/add-ssh-public-key.sh" "$install_dir/scripts/add-ssh-public-key.sh"
 install -d -m 0755 "$windows_root/.wsl-server"
 install -m 0644 "$skill_dir/scripts/Configure-WslSshLan.ps1" "$windows_root/.wsl-server/Configure-WslSshLan.ps1"
 
@@ -132,5 +136,12 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable --now wsl-server-workbench.service wsl-server-workbench-health.timer
+bash "$skill_dir/scripts/render-manuals.sh" \
+  --wsl-user "$wsl_user" \
+  --windows-user "$windows_user" \
+  --windows-hostname "$windows_hostname" \
+  --distro "$distro" \
+  --ssh-port "$ssh_port" \
+  --output-dir "$manual_dir"
 printf 'Workbench: http://127.0.0.1:4173\n'
 printf 'Windows LAN script: C:\\Users\\%s\\.wsl-server\\Configure-WslSshLan.ps1\n' "$windows_user"

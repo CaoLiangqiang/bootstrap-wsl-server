@@ -1,6 +1,6 @@
 ---
 name: bootstrap-wsl-server
-description: Configure, verify, operate, and troubleshoot a Windows-hosted WSL2 Ubuntu SSH server using default NAT networking, Windows portproxy, a Private/LocalSubnet firewall rule, password and public-key authentication, startup automation, and an optional loopback-only health workbench. Use when Codex needs to reproduce this WSL server setup on another Windows computer, enroll SSH public keys, change the LAN SSH port, audit access logs, install the local workbench, diagnose WSL route or DNS failures, or safely roll back LAN access.
+description: Configure, verify, operate, document, and troubleshoot a Windows-hosted WSL2 Ubuntu SSH server using default NAT networking, Windows portproxy, a Private/LocalSubnet firewall rule, password and public-key authentication, startup automation, standalone host/client HTML manuals, and an optional loopback-only health workbench. Use when Codex needs to reproduce this WSL server setup on another Windows computer, generate administrator or client access manuals, enroll SSH public keys, change the LAN SSH port, audit access logs, install the local workbench, diagnose WSL route or DNS failures, or safely roll back LAN access.
 ---
 
 # Bootstrap WSL Server
@@ -27,9 +27,10 @@ Build the server in layers so each trust boundary remains visible: WSL services,
 5. Copy `scripts/Configure-WslSshLan.ps1` to Windows and run it from elevated PowerShell with the confirmed distribution and LAN port.
 6. Verify Linux and Windows layers with `bash scripts/verify-wsl-server.sh` and the PowerShell status commands in the runbook.
 7. Enroll only a public key file with `bash scripts/add-ssh-public-key.sh USER.pub`; return its fingerprint to the user.
-8. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`.
-9. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
-10. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
+8. Always generate the standalone host and client manuals with `scripts/render-manuals.sh`; give the client file to access users without secrets or fixed LAN IPs.
+9. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`; this also refreshes both standalone manuals.
+10. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
+11. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
 
 ## Success criteria
 
@@ -39,6 +40,7 @@ Build the server in layers so each trust boundary remains visible: WSL services,
 - The firewall rule is enabled only for Private networks and `LocalSubnet`.
 - Password login works when enabled, and an explicitly selected private key completes a signed public-key login.
 - The startup task wakes the selected WSL distribution after Windows logon.
+- `wsl-server-host-manual.html` and `wsl-server-client-manual.html` exist with all template values resolved.
 - When installed, the workbench and five-minute health timer are active and the dashboard is reachable only on `127.0.0.1:4173`.
 
 ## Resource routing
@@ -49,4 +51,5 @@ Build the server in layers so each trust boundary remains visible: WSL services,
 - Run `scripts/audit-wsl-server.sh` before changes and `scripts/verify-wsl-server.sh` after each layer.
 - Run `scripts/configure-wsl-base.sh` only inside WSL and `scripts/Configure-WslSshLan.ps1` only from elevated Windows PowerShell.
 - Use `scripts/add-ssh-public-key.sh` only with public key files.
+- Run `scripts/render-manuals.sh` after the hostname, users, distribution, or SSH port changes.
 - Use `scripts/install-workbench.sh` only after SSH and Windows forwarding are working.

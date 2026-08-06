@@ -64,6 +64,23 @@ node --check "$rendered/server.js"
 node --check "$rendered/public/app.js"
 node --check "$rendered/scripts/health-check.js"
 
+manuals="$tmp_dir/manuals"
+bash "$skill_dir/scripts/render-manuals.sh" \
+  --wsl-user testuser --windows-user testwindows --windows-hostname testhost \
+  --distro TestDistro --ssh-port 2229 --output-dir "$manuals" >/dev/null
+host_manual="$manuals/wsl-server-host-manual.html"
+client_manual="$manuals/wsl-server-client-manual.html"
+test -s "$host_manual"
+test -s "$client_manual"
+grep -q '主机端管理员手册' "$host_manual"
+grep -q '客户端访问手册' "$client_manual"
+grep -q 'testhost' "$client_manual"
+grep -q '2229' "$host_manual"
+if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual"; then
+  printf 'Found unresolved manual template values.\n' >&2
+  exit 1
+fi
+
 if rg -n 'caojiang|cjnotebook1|10\.197|Manage-WslSshPort|node_modules' \
   "$skill_dir/SKILL.md" "$skill_dir/references" "$skill_dir/assets" "$skill_dir/agents" \
   --glob '!assets/workbench/public/vendor/lucide.min.js'; then

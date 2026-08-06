@@ -8,8 +8,9 @@
 4. Configure OpenSSH
 5. Configure Windows LAN forwarding
 6. Verify password and public-key access
-7. Install the optional workbench
-8. Acceptance checklist
+7. Generate the host and client manuals
+8. Install the optional workbench
+9. Acceptance checklist
 
 ## 1. Target architecture
 
@@ -177,7 +178,29 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
 
 Only `WSL_SSH_OK` or `Authenticated to ...` proves completed authentication.
 
-## 7. Install the optional workbench
+## 7. Generate the host and client manuals
+
+Run inside WSL after confirming the final hostname, users, distribution, and LAN SSH port:
+
+```bash
+bash scripts/render-manuals.sh \
+  --wsl-user alice \
+  --windows-user WINDOWS_USER \
+  --windows-hostname WINDOWS_HOSTNAME \
+  --distro Ubuntu \
+  --ssh-port 2222
+```
+
+The default output directory is `~/wsl-server-manuals`:
+
+```text
+wsl-server-host-manual.html
+wsl-server-client-manual.html
+```
+
+Keep the host manual with the administrator. Give the client manual to access users. Regenerate both after changing the hostname, WSL login user, distribution, or LAN SSH port. The generated files are standalone HTML and must not contain passwords, private keys, fixed LAN IPs, or unresolved `__PLACEHOLDER__` values.
+
+## 8. Install the optional workbench
 
 Install Ubuntu's Node.js package if `node` is absent. Then run inside WSL:
 
@@ -187,6 +210,8 @@ bash scripts/install-workbench.sh \
   --distro Ubuntu \
   --ssh-port 2222
 ```
+
+The installer also refreshes the two standalone manuals under `~/wsl-server-manuals`.
 
 Open locally:
 
@@ -203,7 +228,7 @@ curl -fsS http://127.0.0.1:4173/api/overview
 curl -fsS 'http://127.0.0.1:4173/api/health?limit=5'
 ```
 
-## 8. Acceptance checklist
+## 9. Acceptance checklist
 
 - Default NAT route and generated DNS are healthy after a full WSL restart.
 - OpenSSH is active on WSL TCP 22.
@@ -213,6 +238,6 @@ curl -fsS 'http://127.0.0.1:4173/api/health?limit=5'
 - The scheduled task wakes the correct distribution.
 - Password login succeeds if enabled.
 - A signed public-key command returns the expected marker.
+- Both standalone HTML manuals exist and contain the confirmed hostname, user, distribution, and port.
 - The workbench, when installed, listens only on `127.0.0.1:4173`.
 - The health timer records a current result.
-
