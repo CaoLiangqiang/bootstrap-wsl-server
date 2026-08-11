@@ -1,0 +1,24 @@
+# Optional WSL WebUI operations layer
+
+This rendered directory is an optional Phase 2b extension. It does not own the
+application service, SSH, credentials, certificates, or Windows LAN rules.
+
+- Application: `__APP_NAME_TEXT__` (`__APP_ID__`)
+- User service observed by health checks: `__SERVICE_UNIT__`
+- Application origin: `http://127.0.0.1:__APP_PORT__`
+- Health path: `__HEALTH_PATH_TEXT__`
+- Gateway: `https://__GATEWAY_HOSTNAME__:__GATEWAY_PORT__`, bound to `127.0.0.1`
+
+The installer creates private gateway configuration, Caddy data, and Caddy
+state directories with mode `700`. Create
+`%h/.config/webui-gateway/gateway.env` with mode `600`. It must define
+`GATEWAY_USERNAME` and `GATEWAY_PASSWORD_HASH`. Do not put
+the password, password hash, certificates, private keys, or application secrets
+in this directory or in `registry.json`.
+
+The installer does not enable or start units. After independently verifying the
+application loopback endpoint and creating the private environment file, an
+operator may explicitly enable `webui-gateway.service` and
+`wsl-app-health@__APP_ID__.timer`. LAN exposure requires a separate reviewed
+Windows gateway step. Never register or forward the unauthenticated workbench on
+port 4173.

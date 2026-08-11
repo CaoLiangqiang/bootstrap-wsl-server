@@ -1,4 +1,4 @@
 interface:
   display_name: "Bootstrap WSL Server"
-  short_description: "Extend WSL foundation into SSH server"
-  default_prompt: "Use $bootstrap-wsl-server after $bootstrap-wsl-ai-dev to configure the WSL SSH server and generate host/client manuals."
+  short_description: "Run WSL SSH and optional WebUI hosting"
+  default_prompt: "Use $bootstrap-wsl-server to configure a WSL LAN server and optionally host authenticated WebUI applications."

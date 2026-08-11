@@ -1,0 +1,23 @@
+{
+	admin off
+	auto_https disable_redirects
+	skip_install_trust
+}
+
+https://__GATEWAY_HOSTNAME__:__GATEWAY_PORT__ {
+	bind 127.0.0.1
+	tls internal
+
+	basicauth {
+		{$GATEWAY_USERNAME} {$GATEWAY_PASSWORD_HASH}
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+	}
+
+	reverse_proxy 127.0.0.1:__APP_PORT__
+}

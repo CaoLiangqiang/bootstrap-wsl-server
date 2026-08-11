@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "gateway": {
+    "hostname": "__GATEWAY_HOSTNAME__",
+    "listen": {
+      "host": "127.0.0.1",
+      "port": __GATEWAY_PORT__
+    }
+  },
+  "apps": [
+    {
+      "id": "__APP_ID__",
+      "display_name": "__APP_NAME_JSON__",
+      "enabled": true,
+      "service_unit": "__SERVICE_UNIT__",
+      "listen": {
+        "host": "127.0.0.1",
+        "port": __APP_PORT__
+      },
+      "health": {
+        "path": "__HEALTH_PATH_JSON__",
+        "expected_status": [
+          200
+        ],
+        "timeout_seconds": 5,
+        "max_same_origin_redirects": 3
+      }
+    }
+  ]
+}
