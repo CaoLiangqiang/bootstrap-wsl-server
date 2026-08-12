@@ -151,7 +151,13 @@ Distribute only the client manual to users:
 ~/wsl-server-manuals/wsl-server-client-manual.html
 ```
 
-Review the generated connection values before distribution. Dynamic LAN addresses remain placeholders by design and must be communicated from current Windows network state.
+Distribute the project migration manual to project owners who will move a repository:
+
+```text
+~/wsl-server-manuals/wsl-server-project-migration-manual.html
+```
+
+Review the generated connection values before distribution. Dynamic LAN addresses remain placeholders by design and must be communicated from current Windows network state. Never add credentials or private keys to any generated manual.
 
 ## 8. Client configuration
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Bootstrap WSL Server"
-  short_description: "Run WSL SSH and optional WebUI hosting"
-  default_prompt: "Use $bootstrap-wsl-server to configure a WSL LAN server and optionally host authenticated WebUI applications."
+  short_description: "Run WSL SSH, migrate projects, and host WebUIs"
+  default_prompt: "Use $bootstrap-wsl-server to configure a WSL LAN server, migrate a Windows WebUI project end to end, and host it behind authenticated HTTPS."

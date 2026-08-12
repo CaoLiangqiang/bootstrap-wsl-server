@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WSL __DISTRO__ · 项目移植手册</title>
+  <style>
+    :root { --ink:#17201c; --muted:#68736d; --line:#dce2df; --bg:#f4f6f5; --panel:#fff; --green:#177a4c; --green-soft:#e7f4ed; --amber:#a36413; --amber-soft:#fff2dc; --red:#b33c38; --red-soft:#fbeceb; font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    * { box-sizing:border-box; } body { margin:0; line-height:1.65; } header { padding:42px max(24px,calc((100% - 1000px)/2)); color:#fff; background:#111915; } h1 { margin:0; font-size:30px; line-height:1.2; letter-spacing:0; } header p { max-width:760px; margin:10px 0 0; color:#b5c0ba; font-size:14px; } main { max-width:1000px; margin:0 auto; padding:22px 24px 70px; } h2 { margin:36px 0 13px; padding-bottom:8px; border-bottom:1px solid var(--line); font-size:21px; } h3 { margin:24px 0 7px; font-size:16px; } p { margin:8px 0; } code,pre { font-family:"Cascadia Code",Consolas,monospace; } code { padding:1px 4px; border-radius:3px; background:#edf0ee; font-size:.9em; } pre { padding:13px 15px; overflow:auto; color:#e3ebe6; background:#17201c; border-radius:5px; font-size:12px; line-height:1.55; } table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); font-size:13px; } th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { color:var(--muted); background:#f9faf9; font-size:11px; } ol,ul { padding-left:23px; } li { margin:5px 0; } a { color:var(--green); } .notice { margin:15px 0; padding:14px 16px; border-left:4px solid var(--green); background:var(--green-soft); } .notice.warn { border-color:var(--amber); background:var(--amber-soft); } .notice.danger { border-color:var(--red); background:var(--red-soft); } .toc { columns:2; margin:0; padding:16px 24px; border:1px solid var(--line); border-radius:5px; background:var(--panel); } .toc li { break-inside:avoid; } .flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:16px 0; } .flow div { padding:12px; text-align:center; border:1px solid var(--line); border-radius:5px; background:var(--panel); font-size:12px; } .flow b { display:block; margin-bottom:4px; color:var(--green); font-size:11px; } .checklist { list-style:none; padding-left:0; } .checklist li::before { content:"□"; margin-right:8px; color:var(--green); font-weight:700; } footer { max-width:1000px; margin:0 auto; padding:0 24px 30px; color:var(--muted); font-size:12px; }
+    @media (max-width:700px) { header { padding:28px 16px; } main { padding:14px 16px 50px; } h1 { font-size:24px; } .flow { grid-template-columns:1fr; } .toc { columns:1; } table { display:block; overflow:auto; white-space:nowrap; } }
+    @media print { header { padding:0 0 20px; color:#000; background:#fff; border-bottom:2px solid #000; } header p { color:#000; } main { padding:0; } .notice,table { break-inside:avoid; } a { color:#000; text-decoration:none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Windows 项目到 WSL WebUI<br>端到端移植手册</h1>
+    <p>面向项目负责人：把开发电脑上的仓库迁移到 __WINDOWS_HOSTNAME__ 的 WSL __DISTRO__，完成 Linux 适配、长期运行、受控发布、验证与交接。</p>
+  </header>
+  <main>
+    <div class="notice"><b>完成标准：</b>仓库来源可追溯，应用仅监听 WSL 回环地址，systemd 能自动恢复，健康检查通过，客户端经认证 HTTPS 使用完整功能，数据可恢复，回滚方案已实测。</div>
+    <ol class="toc">
+      <li><a href="#roles">职责与安全边界</a></li>
+      <li><a href="#inventory">迁移前盘点</a></li>
+      <li><a href="#transfer">传输代码与数据</a></li>
+      <li><a href="#adapt">Linux 适配</a></li>
+      <li><a href="#local">本地运行验证</a></li>
+      <li><a href="#service">长期服务化</a></li>
+      <li><a href="#publish">注册、网关与备份</a></li>
+      <li><a href="#acceptance">客户端验收</a></li>
+      <li><a href="#cutover">切换与回滚</a></li>
+      <li><a href="#handoff">交接清单</a></li>
+    </ol>
+
+    <h2 id="roles">1. 职责与安全边界</h2>
+    <div class="flow"><div><b>项目电脑</b>整理仓库与数据</div><div><b>WSL</b>Linux 适配与回环服务</div><div><b>共享网关</b>认证 HTTPS</div><div><b>用户电脑</b>浏览器完整验收</div></div>
+    <table><thead><tr><th>负责人</th><th>负责内容</th></tr></thead><tbody>
+      <tr><td>项目负责人</td><td>依赖、启动命令、配置项、数据范围、健康接口、业务验收和版本回滚。</td></tr>
+      <tr><td>服务器管理员</td><td>SSH 公钥、systemd 审核、应用注册、HTTPS 网关、证书、Windows 转发、防火墙、监控与备份。</td></tr>
+    </tbody></table>
+    <div class="notice warn">不要把密码、令牌、私钥、真实 <code>.env</code>、内部证书私钥或数据库导出提交到 Git、写入手册、聊天记录或命令行参数。工作台 <code>127.0.0.1:4173</code> 没有独立认证，只允许服务器本机浏览器访问，禁止转发到局域网。</div>
+
+    <h2 id="inventory">2. 迁移前盘点</h2>
+    <p>先在项目电脑形成一页迁移记录，至少回答：</p>
+    <ul class="checklist">
+      <li>远程仓库、目标分支和准备发布的提交 ID 已确认。</li>
+      <li>运行时及版本已确认，例如 Python、Node.js、Java、数据库或浏览器组件。</li>
+      <li>启动、停止、健康检查和版本查询方式已确认。</li>
+      <li>所有配置键已列出，并区分普通配置与秘密。</li>
+      <li>数据库、上传文件、报告等持久数据已列出，容量和停机窗口已评估。</li>
+      <li>Windows 专属路径、盘符、批处理、COM、Office、驱动或硬件依赖已识别。</li>
+      <li>预期主机名、访问人群、资源上限和回滚版本已与管理员确认。</li>
+    </ul>
+    <p>发现必须依赖 Windows GUI、内核驱动或本机硬件且无 Linux 替代方案时，先停止迁移并重新设计；不要用兼容层掩盖核心依赖。</p>
+
+    <h2 id="transfer">3. 传输代码与数据</h2>
+    <h3>首选：从权威 Git 仓库克隆</h3>
+    <p>先按客户端手册连接服务器，再在 WSL 中使用项目自己的认证方式克隆。私有仓库凭据只在服务器本地配置，不从其他电脑复制凭据文件。</p>
+    <pre>mkdir -p ~/codebase
+cd ~/codebase
+git clone &lt;approved-repository-url&gt; &lt;project-name&gt;
+cd &lt;project-name&gt;
+git switch &lt;branch&gt;
+git rev-parse HEAD</pre>
+    <h3>无法直接克隆：Git bundle</h3>
+    <p>在项目电脑创建 bundle，经 SSH 复制后，在 WSL 克隆。它保留提交历史，适合暂时无法访问远程仓库的情况。</p>
+    <pre># 项目电脑
+git bundle create project.bundle --all
+scp -P __SSH_PORT__ project.bundle __WSL_USER__@&lt;Windows-LAN-IP&gt;:~/
+
+# WSL
+git clone ~/project.bundle ~/codebase/&lt;project-name&gt;</pre>
+    <h3>仅传非 Git 数据</h3>
+    <p>大量数据优先使用支持断点续传的 <code>rsync</code>；Windows 自带环境可用 <code>scp</code>。先传到暂存目录，核对清单和校验值，再由管理员放入正式数据目录。</p>
+    <pre>scp -P __SSH_PORT__ -r &lt;local-data-directory&gt; \
+  __WSL_USER__@&lt;Windows-LAN-IP&gt;:~/migration-staging/</pre>
+    <div class="notice warn">不要把项目放在 <code>/mnt/c</code> 或 <code>/mnt/e</code> 长期运行。源代码、虚拟环境和运行数据应位于 WSL 的 Linux 文件系统；Windows 挂载盘只用于经确认的导入或导出。</div>
+
+    <h2 id="adapt">4. Linux 适配</h2>
+    <table><thead><tr><th>检查项</th><th>处理原则</th></tr></thead><tbody>
+      <tr><td>路径</td><td>移除盘符和反斜杠；使用相对路径或配置化的绝对路径，并注意 Linux 大小写敏感。</td></tr>
+      <tr><td>脚本</td><td>把必需的 <code>.bat</code>/<code>.ps1</code> 启动逻辑改为项目原生 Linux 命令；文本统一 LF。</td></tr>
+      <tr><td>依赖</td><td>从锁文件重建，不复制 Windows 虚拟环境、<code>node_modules</code> 或已编译二进制。</td></tr>
+      <tr><td>配置</td><td>提交无秘密的 <code>.env.example</code>；真实配置保存在仓库外、权限设为 <code>600</code>。</td></tr>
+      <tr><td>网络</td><td>应用只监听 <code>127.0.0.1</code> 的未占用端口；不要自行创建 Windows 端口转发。</td></tr>
+      <tr><td>状态</td><td>缓存与可重建依赖不备份；数据库、上传、报告和必要配置使用明确的持久目录。</td></tr>
+      <tr><td>接口</td><td>提供快速、无副作用的健康接口，并能返回可核对的版本或提交 ID。</td></tr>
+    </tbody></table>
+    <p>按项目既有工具安装并验证依赖，例如使用锁文件和隔离环境。不要使用全局 <code>sudo pip install</code> 或在生产目录手工修改依赖。</p>
+
+    <h2 id="local">5. 在 WSL 内完成本地验证</h2>
+    <p>先创建仓库外配置，再以普通用户运行。以下仅表示通用检查，实际启动命令以项目文档为准：</p>
+    <pre>cd ~/codebase/&lt;project-name&gt;
+&lt;install-from-lockfile&gt;
+&lt;run-tests-and-build&gt;
+&lt;start-on-127.0.0.1-and-private-port&gt;
+
+curl --fail http://127.0.0.1:&lt;app-port&gt;/&lt;health-path&gt;
+curl --fail http://127.0.0.1:&lt;app-port&gt;/&lt;version-path&gt;
+ss -ltnp</pre>
+    <p>用无痕窗口或全新浏览器配置验证登录、文件上传下载、长任务、报告生成、刷新和错误提示。此阶段端口仍不得从 LAN 访问。</p>
+
+    <h2 id="service">6. 交给 systemd 长期运行</h2>
+    <p>把下列信息交给管理员：工作目录、唯一启动命令、环境文件路径、回环端口、健康路径、停止超时、资源需求以及持久数据目录。管理员按服务器模板创建应用自有的用户服务。</p>
+    <pre>systemctl --user daemon-reload
+systemctl --user enable --now &lt;application-service&gt;.service
+systemctl --user status &lt;application-service&gt;.service --no-pager
+journalctl --user -u &lt;application-service&gt;.service --since today --no-pager</pre>
+    <p>服务应设置工作目录、仓库外环境文件、失败自动重启和合理资源限制。不要在 systemd 单元中写秘密，也不要以 root 运行普通 WebUI。应用启动失败时应退出，由 systemd 记录并重试，而不是在应用内无限后台化。</p>
+
+    <h2 id="publish">7. 应用注册、HTTPS 网关与备份</h2>
+    <p>由服务器管理员完成以下动作，项目负责人提供输入并参与验证：</p>
+    <ol>
+      <li>将应用加入 WebUI 注册表，只登记服务名、回环地址、健康路径及秘密文件和持久数据的路径。</li>
+      <li>启用应用健康检查 timer，确认连续检查通过；健康检查不得修改业务数据。</li>
+      <li>为应用分配独立主机名。只有应用明确支持 base path 时才使用路径前缀。</li>
+      <li>在共享 Caddy 网关启用认证 HTTPS。应用端口仍保持回环监听。</li>
+      <li>仅由共享 HTTPS 入口通过 Windows Private/LocalSubnet 防火墙对 LAN 发布；不要为每个应用增加裸 HTTP 转发。</li>
+      <li>把秘密、持久数据和必要网关状态纳入加密备份；排除仓库、缓存、虚拟环境和可重建依赖。</li>
+    </ol>
+    <div class="notice danger">绝不能通过网页、Git 或聊天分发 Caddy 私有 CA 密钥、Basic Auth 明文密码、应用令牌或 Restic 密码。客户端只安装经管理员核对指纹的公共 CA 证书。</div>
+
+    <h2 id="acceptance">8. 从真实客户端验收</h2>
+    <p>在最终使用者电脑上完成，不以服务器本机测试代替：</p>
+    <ul class="checklist">
+      <li>公共 CA 已按客户端说明安装，指纹与管理员提供值一致。</li>
+      <li>未经认证访问返回 <code>401</code>，正确认证后返回 <code>200</code>。</li>
+      <li>证书主机名匹配、浏览器无 TLS 警告，页面显示预期版本。</li>
+      <li>核心业务流程、上传下载、长任务、刷新及并发场景通过。</li>
+      <li>应用进程被终止后 systemd 能恢复；Windows 定时恢复任务状态正常。</li>
+      <li>备份检查通过，并已恢复到临时目录核对关键文件。</li>
+    </ul>
+
+    <h2 id="cutover">9. 切换与回滚</h2>
+    <ol>
+      <li>冻结旧实例写入，记录旧、新版本提交 ID，并执行最后一次数据同步和校验。</li>
+      <li>先让少量真实用户通过 HTTPS 验收，再宣布切换；保留旧实例和直接测试入口只作为限时回滚。</li>
+      <li>观察服务日志、健康记录、资源占用和用户反馈，确认稳定后再停用旧实例。</li>
+      <li>回滚时先停止新实例写入，恢复兼容的数据快照和旧版本，再验证健康与核心流程。</li>
+    </ol>
+    <p>回滚必须考虑数据库或数据格式兼容性。代码可回退不等于数据可回退；任何破坏性迁移都应先生成可验证快照。</p>
+
+    <h2 id="handoff">10. 交接清单</h2>
+    <table><thead><tr><th>交付物</th><th>不得包含</th></tr></thead><tbody>
+      <tr><td>仓库地址、分支、提交 ID、构建和测试结果</td><td>Git 访问令牌或私钥</td></tr>
+      <tr><td>运行时版本、锁文件、启动/停止/健康/版本命令</td><td>个人机器的绝对路径</td></tr>
+      <tr><td><code>.env.example</code> 和配置项说明</td><td>真实密码、令牌和密钥</td></tr>
+      <tr><td>持久数据清单、备份范围、恢复步骤和保留策略</td><td>未加密的数据副本</td></tr>
+      <tr><td>访问主机名、用户范围、业务验收记录和回滚条件</td><td>固定 LAN IP 假设</td></tr>
+      <tr><td>项目负责人、服务器管理员和故障升级路径</td><td>无人负责的临时配置</td></tr>
+    </tbody></table>
+    <div class="notice"><b>最终签收：</b>项目负责人确认功能和数据，服务器管理员确认监听边界、认证、自动恢复、监控和备份。两方都确认后，迁移才算完成。</div>
+  </main>
+  <footer>Bootstrap WSL Server · 项目移植手册 · 生成日期：__GENERATED_DATE__ · 地址、端口和证书信息以管理员实时提供为准</footer>
+</body>
+</html>

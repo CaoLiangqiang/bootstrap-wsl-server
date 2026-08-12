@@ -1,6 +1,6 @@
 ---
 name: bootstrap-wsl-server
-description: Apply the Phase 2 server extension after bootstrap-wsl-ai-dev has established a native WSL foundation. Configure, verify, operate, document, and troubleshoot WSL2 Ubuntu SSH using default NAT networking, Windows portproxy, a Private/LocalSubnet firewall rule, password and public-key authentication, startup automation, standalone host/client HTML manuals, and an optional loopback-only health workbench. Optionally add a Phase 2b platform for long-running loopback WebUI applications with a registry, health timers, an authenticated HTTPS gateway, client CA guidance, startup wake automation, and encrypted backup guidance. Use when Codex needs to extend a prepared WSL AI workstation into a LAN SSH or WebUI server, migrate a Windows WebUI project into WSL, generate administrator or client access manuals, enroll SSH public keys, change LAN ports, audit services, or safely roll back LAN access.
+description: Apply the Phase 2 server extension after bootstrap-wsl-ai-dev has established a native WSL foundation. Configure, verify, operate, document, and troubleshoot WSL2 Ubuntu SSH using default NAT networking, Windows portproxy, a Private/LocalSubnet firewall rule, password and public-key authentication, startup automation, standalone host/client/project-migration HTML manuals, and an optional loopback-only health workbench. Optionally add a Phase 2b platform for long-running loopback WebUI applications with a registry, health timers, an authenticated HTTPS gateway, client CA guidance, startup wake automation, and encrypted backup guidance. Use when Codex needs to extend a prepared WSL AI workstation into a LAN SSH or WebUI server, migrate or hand off a Windows WebUI repository into WSL end to end, generate administrator, client, or project migration manuals, enroll SSH public keys, change LAN ports, audit services, or safely roll back LAN access.
 ---
 
 # Bootstrap WSL Server
@@ -36,13 +36,14 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 6. Copy `scripts/Configure-WslSshLan.ps1` to Windows and run it from elevated PowerShell with the confirmed distribution and LAN port.
 7. Verify Linux and Windows layers with `bash scripts/verify-wsl-server.sh` and the PowerShell status commands in the runbook.
 8. Enroll only a public key file with `bash scripts/add-ssh-public-key.sh USER.pub`; return its fingerprint to the user.
-9. Always generate the standalone host and client manuals with `scripts/render-manuals.sh`; give the client file to access users without secrets or fixed LAN IPs.
-10. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`; this also refreshes both standalone manuals.
+9. Always generate the standalone host, client, and project migration manuals with `scripts/render-manuals.sh`; give the client and migration files to their intended users without secrets or fixed LAN IPs.
+10. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`; this also refreshes all three standalone manuals.
 11. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
-12. When the user requests hosted WebUIs, read `references/webui-apps.md` completely and apply Phase 2b only after SSH and the foundation are healthy. Render or install the shared operations baseline, register one loopback application, verify its health, configure the HTTPS gateway, apply the Windows relay, install the public CA on the actual client, and test the full browser workflow.
-13. Treat each later WebUI as a separate application-owned service. Use a separate hostname by default; use a path prefix only after confirming the application supports that base path.
-14. When the user needs runtime recovery, install the optional Windows recovery watchdog from `references/webui-apps.md`; it wakes the selected WSL distribution and starts only explicitly configured user services before checking managed listeners, without restarting SSH or shutting down WSL.
-15. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
+12. When the user requests a project migration, read `references/project-migration.md` completely, inventory the source project and choose a transfer method before changing the server.
+13. When the user requests hosted WebUIs, read `references/webui-apps.md` completely and apply Phase 2b only after SSH and the foundation are healthy. Render or install the shared operations baseline, register one loopback application, verify its health, configure the HTTPS gateway, apply the Windows relay, install the public CA on the actual client, and test the full browser workflow.
+14. Treat each later WebUI as a separate application-owned service. Use a separate hostname by default; use a path prefix only after confirming the application supports that base path.
+15. When the user needs runtime recovery, install the optional Windows recovery watchdog from `references/webui-apps.md`; it wakes the selected WSL distribution and starts only explicitly configured user services before checking managed listeners, without restarting SSH or shutting down WSL.
+16. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
 
 ## Success criteria
 
@@ -52,7 +53,7 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 - The firewall rule is enabled only for Private networks and `LocalSubnet`.
 - Password login works when enabled, and an explicitly selected private key completes a signed public-key login.
 - The startup task wakes the selected WSL distribution after Windows logon.
-- `wsl-server-host-manual.html` and `wsl-server-client-manual.html` exist with all template values resolved.
+- `wsl-server-host-manual.html`, `wsl-server-client-manual.html`, and `wsl-server-project-migration-manual.html` exist with all template values resolved.
 - The Phase 1 foundation remains unchanged: no new mirrored mode, global DNS override, Docker proxy rewrite, or Windows AI cleanup occurred during the server extension.
 - When installed, the workbench and five-minute health timer are active and the dashboard is reachable only on `127.0.0.1:4173`.
 - When enabled, the Windows recovery watchdog is owned by this Skill, runs at the configured interval (12 minutes by default), wakes WSL, and starts only its explicitly configured systemd user services before checking managed listeners.
@@ -67,6 +68,7 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 - Read `references/operations.md` for startup, access logs, key enrollment, port changes, workbench use, and rollback.
 - Read `references/troubleshooting.md` before changing SSH policy, WSL networking, DNS, firewall rules, or client keys.
 - Read `references/webui-apps.md` before installing, exposing, backing up, migrating, or removing a managed WebUI application.
+- Read `references/project-migration.md` for the end-to-end source inventory, transfer, Linux adaptation, service, exposure, backup, acceptance, rollback, and handoff workflow.
 - Run `scripts/audit-wsl-server.sh` before changes and `scripts/verify-wsl-server.sh` after each layer.
 - Run `scripts/configure-wsl-base.sh` only inside WSL and `scripts/Configure-WslSshLan.ps1` only from elevated Windows PowerShell.
 - Use `scripts/add-ssh-public-key.sh` only with public key files.

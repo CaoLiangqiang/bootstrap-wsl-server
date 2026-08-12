@@ -88,7 +88,7 @@ rendered="$tmp_dir/rendered-workbench"
 bash "$skill_dir/scripts/install-workbench.sh" \
   --windows-user testwindows --windows-hostname testhost --distro TestDistro \
   --ssh-port 2229 --render-only "$rendered" >/dev/null
-if rg -n '__WSL_USER__|__WINDOWS_USER__|__WINDOWS_HOSTNAME__|__DISTRO__|__SSH_PORT__' "$rendered"; then
+if rg -n '__[A-Z0-9_]+__' "$rendered"; then
   printf 'Found unresolved workbench template values.\n' >&2
   exit 1
 fi
@@ -102,18 +102,23 @@ bash "$skill_dir/scripts/render-manuals.sh" \
   --distro TestDistro --ssh-port 2229 --output-dir "$manuals" >/dev/null
 host_manual="$manuals/wsl-server-host-manual.html"
 client_manual="$manuals/wsl-server-client-manual.html"
+migration_manual="$manuals/wsl-server-project-migration-manual.html"
 test -s "$host_manual"
 test -s "$client_manual"
+test -s "$migration_manual"
 grep -q '主机端管理员手册' "$host_manual"
 grep -q '客户端访问手册' "$client_manual"
+grep -q '项目移植' "$migration_manual"
 grep -q 'testhost' "$client_manual"
 grep -q '2229' "$host_manual"
-if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual"; then
+grep -q 'testhost' "$migration_manual"
+grep -q '2229' "$migration_manual"
+if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual" "$migration_manual"; then
   printf 'Found unresolved manual template values.\n' >&2
   exit 1
 fi
 
-if rg -n 'caojiang|cjnotebook1|10\.197|Manage-WslSshPort|node_modules' \
+if rg -n 'caojiang|cjnotebook1|10\.197|Manage-WslSshPort' \
   "$skill_dir/SKILL.md" "$skill_dir/references" "$skill_dir/assets" "$skill_dir/agents" \
   --glob '!assets/workbench/public/vendor/lucide.min.js'; then
   printf 'Found machine-specific or obsolete content.\n' >&2

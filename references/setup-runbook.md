@@ -8,7 +8,7 @@
 4. Configure OpenSSH
 5. Configure Windows LAN forwarding
 6. Verify password and public-key access
-7. Generate the host and client manuals
+7. Generate the host, client, and project migration manuals
 8. Install the optional workbench
 9. Acceptance checklist
 
@@ -182,7 +182,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
 
 Only `WSL_SSH_OK` or `Authenticated to ...` proves completed authentication.
 
-## 7. Generate the host and client manuals
+## 7. Generate the host, client, and project migration manuals
 
 Run inside WSL after confirming the final hostname, users, distribution, and LAN SSH port:
 
@@ -200,9 +200,10 @@ The default output directory is `~/wsl-server-manuals`:
 ```text
 wsl-server-host-manual.html
 wsl-server-client-manual.html
+wsl-server-project-migration-manual.html
 ```
 
-Keep the host manual with the administrator. Give the client manual to access users. Regenerate both after changing the hostname, WSL login user, distribution, or LAN SSH port. The generated files are standalone HTML and must not contain passwords, private keys, fixed LAN IPs, or unresolved `__PLACEHOLDER__` values.
+Keep the host manual with the administrator. Give the client manual to access users and the project migration manual to project owners. Regenerate all three after changing the hostname, WSL login user, distribution, or LAN SSH port. The generated files are standalone HTML and must not contain passwords, private keys, fixed LAN IPs, or unresolved `__PLACEHOLDER__` values.
 
 ## 8. Install the optional workbench
 
@@ -215,7 +216,7 @@ bash scripts/install-workbench.sh \
   --ssh-port 2222
 ```
 
-The installer also refreshes the two standalone manuals under `~/wsl-server-manuals`.
+The installer also refreshes all three standalone manuals under `~/wsl-server-manuals`.
 
 Open locally:
 
@@ -242,6 +243,6 @@ curl -fsS 'http://127.0.0.1:4173/api/health?limit=5'
 - The scheduled task wakes the correct distribution.
 - Password login succeeds if enabled.
 - A signed public-key command returns the expected marker.
-- Both standalone HTML manuals exist and contain the confirmed hostname, user, distribution, and port.
+- All three standalone HTML manuals exist and contain the confirmed hostname, user, distribution, and port.
 - The workbench, when installed, listens only on `127.0.0.1:4173`.
 - The health timer records a current result.

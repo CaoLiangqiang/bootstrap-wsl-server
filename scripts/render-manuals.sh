@@ -21,8 +21,9 @@ Options:
   --ssh-port PORT          Windows LAN SSH port (default: 2222)
   --output-dir PATH        Output directory (default: ~/wsl-server-manuals)
 
-Produces two standalone HTML files: a host administrator manual and a client
-access manual. The files contain no passwords, private keys, or fixed LAN IPs.
+Produces three standalone HTML files: a host administrator manual, a client
+access manual, and an end-to-end project migration manual. The files contain
+no passwords, private keys, or fixed LAN IPs.
 EOF
 }
 
@@ -76,13 +77,16 @@ render() {
 install -d -m 0755 "$output_dir"
 host_manual="$output_dir/wsl-server-host-manual.html"
 client_manual="$output_dir/wsl-server-client-manual.html"
+migration_manual="$output_dir/wsl-server-project-migration-manual.html"
 render "$skill_dir/assets/workbench/public/admin-manual.html" "$host_manual"
 render "$skill_dir/assets/workbench/public/client-access-manual.html" "$client_manual"
-chmod 0644 "$host_manual" "$client_manual"
+render "$skill_dir/assets/workbench/public/project-migration-manual.html" "$migration_manual"
+chmod 0644 "$host_manual" "$client_manual" "$migration_manual"
 
-if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual"; then
+if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual" "$migration_manual"; then
   printf 'Manual rendering left unresolved template values.\n' >&2
   exit 1
 fi
 printf 'Host manual: %s\n' "$host_manual"
 printf 'Client manual: %s\n' "$client_manual"
+printf 'Project migration manual: %s\n' "$migration_manual"

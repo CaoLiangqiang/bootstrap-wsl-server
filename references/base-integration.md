@@ -17,7 +17,7 @@ Expected: `systemd`, the selected WSL user, a default route, and a generated res
 
 ## Ownership
 
-The base Skill owns native tool installation, PATH isolation, Git/AI client configuration, Docker and its proxy decisions, Windows AI cleanup, Explorer registry integration, and network diagnostics. The server Skill owns only OpenSSH server policy, `authorized_keys`, Windows SSH `portproxy`, the Private/LocalSubnet firewall rule, the WSL startup task, the loopback workbench, health checks, and the two HTML manuals.
+The base Skill owns native tool installation, PATH isolation, Git/AI client configuration, Docker and its proxy decisions, Windows AI cleanup, Explorer registry integration, and network diagnostics. The server Skill owns only OpenSSH server policy, `authorized_keys`, Windows SSH `portproxy`, the Private/LocalSubnet firewall rule, the WSL startup task, the loopback workbench, health checks, and the host, client, and project migration HTML manuals.
 
 Neither phase should rewrite `.wslconfig`, mirrored networking, global WSL DNS, or unrelated `/etc/wsl.conf` sections during the server handoff. Keep WSL on default NAT.
 
@@ -37,6 +37,5 @@ Neither phase should rewrite `.wslconfig`, mirrored networking, global WSL DNS, 
 After the base validation passes, invoke:
 
 ```text
-Use $bootstrap-wsl-server to add the LAN SSH server extension and generate the host and client manuals.
+Use $bootstrap-wsl-server to add the LAN SSH server extension and generate the host, client, and project migration manuals.
 ```
-
