@@ -7,9 +7,10 @@
 3. Public-key enrollment
 4. Password and port management
 5. Workbench and health history
-6. Manual regeneration and delivery
-7. Client configuration
-8. Rollback
+6. Recovery and browser continuity
+7. Manual regeneration and delivery
+8. Client configuration
+9. Rollback
 
 ## 1. Daily status
 
@@ -46,7 +47,12 @@ Windows `portproxy` makes connections appear to WSL as `127.0.0.1`. Windows Fire
 
 ## 3. Public-key enrollment
 
-Accept only an OpenSSH `.pub` file:
+All enrolled keys map to the configured WSL account; this workflow does not
+create a separate Linux account. Accept only an OpenSSH `.pub` file. From the
+server's local browser, open `http://127.0.0.1:4173`, use **Access management →
+Login public key**, verify the SHA256 fingerprint, and confirm.
+
+The command-line fallback is:
 
 ```bash
 bash scripts/add-ssh-public-key.sh /path/to/user.pub
@@ -54,7 +60,19 @@ ssh-keygen -lf ~/.ssh/authorized_keys
 stat -c '%U:%G %a %n' ~/.ssh ~/.ssh/authorized_keys
 ```
 
-Expected modes are `700` for `.ssh` and `600` for `authorized_keys`. Return the full SHA256 fingerprint to the user. Never accept a private key.
+Expected modes are `700` for `.ssh` and `600` for `authorized_keys`. Return the full SHA256 fingerprint to the user. Never accept a private key. Enrollment appends only and does not reload or restart `sshd`, so existing sessions remain connected.
+
+The workbench has no independent authentication and trusts the local machine.
+Keep it on `127.0.0.1`, never port-forward `4173`, and use the enrollment UI
+only from the local administrator's browser. Each private-key holder receives
+the full permissions of the shared WSL account.
+
+Enrollment audit lines contain only the result, algorithm, fingerprint, and
+loopback address:
+
+```bash
+journalctl --user -u wsl-server-workbench --since today | grep public-key-enrollment
+```
 
 To revoke a key, identify the exact fingerprint first, back up `authorized_keys`, remove only the corresponding complete line, and run `ssh-keygen -lf` again. Do not rewrite unrelated or malformed historical entries without explicit review.
 
@@ -90,7 +108,26 @@ Health files are stored under `~/.local/state/wsl-server-workbench` with private
 
 The web process never receives passwords. Password changes open a terminal. Port changes open an elevated Windows PowerShell process and require UAC.
 
-## 6. Manual regeneration and delivery
+## 6. Recovery and browser continuity
+
+For a long-running WebUI host, inspect the optional Windows runtime watchdog:
+
+```powershell
+& "$env:USERPROFILE\.wsl-server\Configure-WslRecoveryWatchdog.ps1" -Status
+```
+
+It wakes WSL every 12 minutes by default, idempotently starts only its configured
+systemd user services, and then checks the managed Windows listener ports.
+Each service unit retains its own `Restart=on-failure` policy. It does not restart SSH, run `wsl --shutdown`, or
+forward the local workbench. Remove only the owned task with `-Remove`.
+
+The workbench browser page polls its API about every 30 seconds, so a healthy
+service continues to refresh data while the page remains open. A network/TCP disconnect cannot be
+kept alive by the server; after recovery the browser may need to reconnect or
+reload. The console is intentionally available only in the Windows server
+host's local browser at `http://127.0.0.1:4173`.
+
+## 7. Manual regeneration and delivery
 
 Regenerate the standalone manuals after changing any connection parameter:
 
@@ -116,7 +153,7 @@ Distribute only the client manual to users:
 
 Review the generated connection values before distribution. Dynamic LAN addresses remain placeholders by design and must be communicated from current Windows network state.
 
-## 7. Client configuration
+## 8. Client configuration
 
 Example client `~/.ssh/config`:
 
@@ -137,7 +174,7 @@ ssh -o BatchMode=yes -o IdentityAgent=none my-wsl-server 'printf WSL_SSH_OK'
 
 For long-running work, use `tmux` inside WSL. SSH keepalives detect dead transports but do not preserve a shell after a network interruption.
 
-## 8. Rollback
+## 9. Rollback
 
 Disable LAN access but retain the startup task and state:
 

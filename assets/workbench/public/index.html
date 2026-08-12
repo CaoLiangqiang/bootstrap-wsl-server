@@ -117,6 +117,22 @@
 
           <div class="divider"></div>
 
+          <div class="control-group key-control-group">
+            <div class="control-copy">
+              <span class="control-icon"><i data-lucide="key-round"></i></span>
+              <div><strong>登录公钥</strong><p>追加到 __WSL_USER__；所有公钥共用此账号</p></div>
+            </div>
+            <button class="secondary-button key-file-button" id="public-key-button" type="button" aria-controls="public-key-file">
+              <i data-lucide="file-up"></i><span>选择 .pub 文件</span>
+            </button>
+            <input id="public-key-file" type="file" accept=".pub,text/plain" hidden>
+          </div>
+          <div class="key-list" id="key-list">
+            <div class="key-list-empty">正在读取已登记公钥</div>
+          </div>
+
+          <div class="divider"></div>
+
           <div class="port-control">
             <label for="port-input">Windows 监听端口</label>
             <div class="input-row">

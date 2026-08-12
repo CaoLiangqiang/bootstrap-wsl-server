@@ -2,7 +2,7 @@
 
 const http = require('node:http');
 const path = require('node:path');
-const { readFile } = require('node:fs/promises');
+const { chmod, lstat, mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -18,9 +18,24 @@ const windowsManagerScript = 'C:\\Users\\__WINDOWS_USER__\\.wsl-server\\Configur
 const windowsTerminal = '/mnt/c/Users/__WINDOWS_USER__/AppData/Local/Microsoft/WindowsApps/wt.exe';
 const windowsWsl = 'C:\\Windows\\System32\\wsl.exe';
 const healthCheckScript = path.join(__dirname, 'scripts', 'health-check.js');
+const publicKeyScript = path.join(__dirname, 'scripts', 'add-ssh-public-key.sh');
+const authorizedKeysPath = path.join(os.homedir(), '.ssh', 'authorized_keys');
+const publicKeyMaxBytes = 16 * 1024;
+const publicKeyRequestMaxBytes = 24 * 1024;
+const authorizedKeysMaxBytes = 64 * 1024;
+const supportedPublicKeyAlgorithms = new Set([
+  'ssh-ed25519',
+  'ssh-rsa',
+  'ecdsa-sha2-nistp256',
+  'ecdsa-sha2-nistp384',
+  'ecdsa-sha2-nistp521',
+  'sk-ssh-ed25519@openssh.com',
+  'sk-ecdsa-sha2-nistp256@openssh.com'
+]);
 const stateRoot = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
 const healthHistoryPath = path.join(stateRoot, 'wsl-server-workbench', 'health-history.jsonl');
 const windowsStateCache = { expiresAt: 0, pending: null, value: null };
+let publicKeyEnrollmentQueue = Promise.resolve();
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -34,7 +49,9 @@ function run(file, args, options = {}) {
   return execFileAsync(file, args, {
     timeout: options.timeout || 8000,
     maxBuffer: 1024 * 1024,
-    windowsHide: true
+    windowsHide: true,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.env ? { env: options.env } : {})
   });
 }
 
@@ -273,19 +290,229 @@ function sendJson(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-function validActionRequest(request) {
-  const hostHeader = request.headers.host || '';
-  return request.headers['x-workbench-action'] === 'confirm'
-    && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(hostHeader);
+function requestError(status, message) {
+  const error = new Error(message);
+  error.statusCode = status;
+  return error;
 }
 
-async function readJsonBody(request) {
-  let body = '';
-  for await (const chunk of request) {
-    body += chunk;
-    if (body.length > 4096) throw new Error('Request body too large');
+function isLoopbackHost(value) {
+  const match = value.match(/^(127\.0\.0\.1|localhost)(?::(\d+))?$/i);
+  return Boolean(match) && (!match[2] || Number.parseInt(match[2], 10) === port);
+}
+
+function isLoopbackOrigin(value) {
+  if (!value) return true;
+  try {
+    const origin = new URL(value);
+    return origin.protocol === 'http:'
+      && (origin.hostname === '127.0.0.1' || origin.hostname === 'localhost')
+      && Boolean(origin.port)
+      && Number.parseInt(origin.port, 10) === port;
+  } catch {
+    return false;
   }
-  return body ? JSON.parse(body) : {};
+}
+
+function validActionRequest(request) {
+  const hostHeader = request.headers.host || '';
+  const remoteAddress = request.socket.remoteAddress || '';
+  const origin = request.headers.origin || '';
+  return request.headers['x-workbench-action'] === 'confirm'
+    && (remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1')
+    && isLoopbackHost(hostHeader)
+    && isLoopbackOrigin(origin);
+}
+
+async function readJsonBody(request, maxBytes = 4096) {
+  const declaredLength = Number.parseInt(request.headers['content-length'] || '', 10);
+  if (Number.isInteger(declaredLength) && declaredLength > maxBytes) {
+    throw requestError(413, 'Request body too large');
+  }
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (totalBytes > maxBytes) throw requestError(413, 'Request body too large');
+    chunks.push(buffer);
+  }
+  const body = Buffer.concat(chunks).toString('utf8');
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw requestError(400, 'Invalid JSON body');
+  }
+}
+
+function normalizePublicKey(value) {
+  if (typeof value !== 'string') throw requestError(400, 'Public key must be a string');
+  if (Buffer.byteLength(value, 'utf8') === 0) throw requestError(400, 'Public key is empty');
+  if (Buffer.byteLength(value, 'utf8') > publicKeyMaxBytes) {
+    throw requestError(413, 'Public key is too large');
+  }
+  if (value.includes('\0') || /-----BEGIN [^-]*PRIVATE KEY-----/i.test(value)) {
+    throw requestError(400, 'Private keys are not accepted');
+  }
+  for (const character of value) {
+    const code = character.codePointAt(0);
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127) {
+      throw requestError(400, 'Public key contains unsupported control characters');
+    }
+  }
+
+  const normalized = value.replace(/\r\n/g, '\n');
+  if (normalized.includes('\r')) throw requestError(400, 'Public key must use normal line endings');
+  const keyLines = normalized.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+  if (keyLines.length !== 1) {
+    throw requestError(400, 'Provide exactly one non-comment OpenSSH public-key line');
+  }
+  const keyLine = keyLines[0];
+  const match = keyLine.match(/^([^\s]+)[ \t]+([A-Za-z0-9+/=]+)(?:[ \t]+.*)?$/);
+  if (!match || !supportedPublicKeyAlgorithms.has(match[1])) {
+    throw requestError(400, 'Unsupported or malformed OpenSSH public key');
+  }
+  return { keyLine, algorithm: match[1] };
+}
+
+async function fingerprintPublicKey(keyLine) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'wsl-public-key-'));
+  const keyPath = path.join(tempDir, 'key.pub');
+  try {
+    await chmod(tempDir, 0o700);
+    await writeFile(keyPath, `${keyLine}\n`, { mode: 0o600 });
+    let output;
+    try {
+      output = await runText('ssh-keygen', ['-lf', keyPath], { timeout: 5000 });
+    } catch {
+      throw requestError(400, 'Public key could not be parsed');
+    }
+    const fingerprint = output.split(/\s+/)[1] || '';
+    if (!/^SHA256:[A-Za-z0-9+/=]+$/.test(fingerprint)) {
+      throw requestError(400, 'Public key fingerprint could not be calculated');
+    }
+    return fingerprint;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function parseAuthorizedKeyOutput(output) {
+  const typeMap = {
+    ED25519: 'ssh-ed25519',
+    RSA: 'ssh-rsa',
+    ECDSA: 'ecdsa-sha2',
+    'ED25519-SK': 'sk-ssh-ed25519@openssh.com',
+    'ECDSA-SK': 'sk-ecdsa-sha2-nistp256@openssh.com'
+  };
+  const seen = new Set();
+  return output.split('\n').map((line) => {
+    const fields = line.trim().split(/\s+/);
+    const fingerprint = fields[1] || '';
+    const type = line.match(/\(([^()]+)\)\s*$/)?.[1] || 'unknown';
+    if (!/^SHA256:[A-Za-z0-9+/=]+$/.test(fingerprint) || seen.has(fingerprint)) return null;
+    seen.add(fingerprint);
+    return { fingerprint, algorithm: typeMap[type] || type.toLowerCase() };
+  }).filter(Boolean);
+}
+
+async function getPublicKeys() {
+  let output = '';
+  try {
+    const info = await lstat(authorizedKeysPath);
+    if (!info.isFile() || info.isSymbolicLink()) {
+      throw requestError(409, 'The authorized-keys path must be a regular file');
+    }
+    if (info.size === 0) return { count: 0, keys: [] };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { count: 0, keys: [] };
+    throw error;
+  }
+  try {
+    output = await runText('ssh-keygen', ['-lf', authorizedKeysPath], { timeout: 5000 });
+  } catch (error) {
+    output = String(error.stdout || '');
+    if (!output && /is not a public key file/i.test(String(error.stderr || ''))) {
+      return { count: 0, keys: [] };
+    }
+    if (!output) throw error;
+  }
+  const keys = parseAuthorizedKeyOutput(output);
+  return { count: keys.length, keys };
+}
+
+async function hasPublicKey(fingerprint) {
+  const keys = await getPublicKeys();
+  return keys.keys.some((item) => item.fingerprint === fingerprint);
+}
+
+async function checkAuthorizedKeysCapacity(keyLine) {
+  let info;
+  try {
+    info = await lstat(authorizedKeysPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw requestError(409, 'The authorized-keys file cannot be inspected');
+  }
+  if (!info.isFile() || info.isSymbolicLink()) {
+    throw requestError(409, 'The authorized-keys path must be a regular file');
+  }
+  if (info.size + Buffer.byteLength(keyLine, 'utf8') + 1 > authorizedKeysMaxBytes) {
+    throw requestError(413, 'The authorized-keys file is full');
+  }
+}
+
+function queuePublicKeyEnrollment(task) {
+  const operation = publicKeyEnrollmentQueue.then(task, task);
+  publicKeyEnrollmentQueue = operation.catch(() => {});
+  return operation;
+}
+
+function logPublicKeyEnrollment(request, result, algorithm, fingerprint) {
+  const record = {
+    event: 'public-key-enrollment',
+    timestamp: new Date().toISOString(),
+    result,
+    algorithm,
+    fingerprint,
+    remoteAddress: request.socket.remoteAddress || 'unknown'
+  };
+  const line = JSON.stringify(record);
+  if (result === 'failed') console.error(line);
+  else console.info(line);
+}
+
+async function enrollPublicKey(keyLine, fingerprint) {
+  return queuePublicKeyEnrollment(async () => {
+    const alreadyAuthorized = await hasPublicKey(fingerprint);
+    if (!alreadyAuthorized) await checkAuthorizedKeysCapacity(keyLine);
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'wsl-public-key-'));
+    const keyPath = path.join(tempDir, 'key.pub');
+    try {
+      await chmod(tempDir, 0o700);
+      await writeFile(keyPath, `${keyLine}\n`, { mode: 0o600 });
+      let scriptOutput = '';
+      try {
+        const environment = { ...process.env, HOME: os.homedir(), AUTHORIZED_KEYS_FILE: authorizedKeysPath };
+        const result = await run('/bin/bash', [publicKeyScript, keyPath], { timeout: 10000, env: environment });
+        scriptOutput = result.stdout || '';
+      } catch {
+        throw requestError(500, 'Public-key enrollment failed; check the workbench log');
+      }
+      if (!await hasPublicKey(fingerprint)) {
+        throw requestError(500, 'Public-key enrollment could not be verified');
+      }
+      return {
+        result: alreadyAuthorized || /Key already authorized:/.test(scriptOutput) ? 'already-authorized' : 'added',
+        fingerprint
+      };
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
 }
 
 async function launchPasswordTerminal() {
@@ -359,12 +586,45 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, await getHealthHistory(limit));
       return;
     }
+    if (request.method === 'GET' && url.pathname === '/api/keys') {
+      sendJson(response, 200, await getPublicKeys());
+      return;
+    }
     if (request.method === 'POST' && url.pathname.startsWith('/api/actions/')) {
       if (!validActionRequest(request)) {
         sendJson(response, 403, { error: 'Local action confirmation missing' });
         return;
       }
-      const body = await readJsonBody(request);
+      const isPublicKeyAction = url.pathname === '/api/actions/public-key';
+      if (isPublicKeyAction && !/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) {
+        sendJson(response, 415, { error: 'Public-key actions require application/json' });
+        return;
+      }
+      const body = await readJsonBody(request, isPublicKeyAction ? publicKeyRequestMaxBytes : 4096);
+      if (isPublicKeyAction) {
+        if (!body || typeof body !== 'object' || Array.isArray(body)
+          || Object.keys(body).some((key) => !['mode', 'key'].includes(key))
+          || !['preview', 'add'].includes(body.mode)
+          || typeof body.key !== 'string') {
+          throw requestError(400, 'Public-key action requires mode and key');
+        }
+        const { keyLine, algorithm } = normalizePublicKey(body.key);
+        const fingerprint = await fingerprintPublicKey(keyLine);
+        if (body.mode === 'preview') {
+          sendJson(response, 200, { mode: 'preview', algorithm, fingerprint });
+          return;
+        }
+        let result;
+        try {
+          result = await enrollPublicKey(keyLine, fingerprint);
+        } catch (error) {
+          logPublicKeyEnrollment(request, 'failed', algorithm, fingerprint);
+          throw error;
+        }
+        logPublicKeyEnrollment(request, result.result, algorithm, fingerprint);
+        sendJson(response, result.result === 'added' ? 201 : 200, { ...result, algorithm });
+        return;
+      }
       if (url.pathname === '/api/actions/password') {
         await launchPasswordTerminal();
         sendJson(response, 202, { message: 'Password terminal opened' });
@@ -392,7 +652,11 @@ const server = http.createServer(async (request, response) => {
     }
     response.writeHead(405).end('Method not allowed');
   } catch (error) {
-    sendJson(response, 500, { error: error.message || 'Unexpected error' });
+    const status = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    const message = status >= 500 && url.pathname === '/api/actions/public-key'
+      ? 'Public-key enrollment failed; check the workbench log'
+      : error.message || 'Unexpected error';
+    sendJson(response, status, { error: message });
   }
 });
 

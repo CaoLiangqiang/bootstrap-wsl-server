@@ -30,10 +30,11 @@
 Get-Content "$env:USERPROFILE\.ssh\id_ed25519_wsl_server.pub"</pre>
     <div class="notice warn">只发送以 <code>ssh-ed25519</code> 开头的单行公钥；不要发送没有 <code>.pub</code> 后缀的私钥。</div>
     <h2>3. 让管理员登记公钥</h2>
-    <ol class="steps"><li>通过公司认可的安全渠道把 `.pub` 文件发送给管理员。</li><li>管理员在 WSL 中运行工作台目录里的登记脚本。</li><li>管理员会回传公钥指纹；核对指纹后再首次使用。</li></ol>
+    <ol class="steps"><li>通过公司认可的安全渠道把 `.pub` 文件发送给管理员，不要发送私钥。</li><li>管理员在服务器本机工作台的“访问管理 → 登录公钥”中选择该文件，核对 SHA256 指纹后确认。</li><li>管理员回传指纹；你先核对本地 `.pub` 指纹，再首次连接。</li></ol>
     <pre>bash ~/wsl-server-workbench/scripts/add-ssh-public-key.sh /path/to/user.pub</pre>
+    <p>服务器不创建独立 Linux 账号，所有公钥都登录同一个 <code>__WSL_USER__</code> 账号。WebUI 只追加 <code>authorized_keys</code>，不会重启 SSH 或中断已有连接。若管理员暂时无法使用 WebUI，可在服务器本机运行上面的回退脚本。</p>
     <p>登记脚本会校验 OpenSSH 格式、自动去重，并保持 <code>~/.ssh/authorized_keys</code> 为 <code>600</code>。它不会打印公钥内容。</p>
-    <div class="notice warn">只把 <code>.pub</code> 文件交给管理员，由管理员运行登记脚本。不要用 PowerShell 管道拼接复杂的远端 <code>read/grep/printf</code> 命令直接修改 <code>authorized_keys</code>；Windows 与远端 shell 的转义差异容易损坏密钥行。</div>
+    <div class="notice warn">只把单行 <code>.pub</code> 文件交给管理员。持有已登记私钥的人都能以共享账号登录并获得该账号权限；离职、设备丢失或密钥泄露时立即通知管理员撤销。</div>
     <h2>4. 配置长期连接</h2>
     <p>在客户端的 <code>~/.ssh/config</code> 添加：</p>
     <pre>Host __WINDOWS_HOSTNAME__-wsl

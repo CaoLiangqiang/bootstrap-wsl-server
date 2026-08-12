@@ -64,6 +64,13 @@ journalctl --user -u wsl-server-workbench-health.service --since today</pre>
     <p>工作台顶部显示 SSH、NAT、认证和对外端口；“连接入口”给出每个 Windows LAN 地址的完整 SSH 命令；“安全边界”显示允许用户、认证方式、root 策略和防火墙范围。</p>
     <h3>修改密码</h3>
     <p>点击“访问管理 → 修改”。工作台只打开 Windows Terminal 的系统 <code>passwd __WSL_USER__</code>，密码输入发生在终端，不经过网页、Node 进程或日志。</p>
+    <h3>录入登录公钥</h3>
+    <p>本服务器不创建独立 Linux 账号，所有访问者共享 <code>__WSL_USER__</code> 账号；每位访问者应使用自己的私钥。打开“访问管理 → 登录公钥”，选择对方提供的单行 <code>.pub</code> 文件，核对工作台显示的 SHA256 指纹后确认录入。工作台只接受公钥，只显示指纹和算法；私钥内容会被拒绝且不会保存。</p>
+    <p>录入操作只追加 <code>~/.ssh/authorized_keys</code>，不重启或 reload <code>sshd</code>，已有 SSH 连接不会被中断。若 WebUI 不可用，可回退到：</p>
+    <pre>bash ~/wsl-server-workbench/scripts/add-ssh-public-key.sh /path/to/user.pub</pre>
+    <p>登记审计只记录结果、算法和指纹，不记录公钥正文：</p>
+    <pre>journalctl --user -u wsl-server-workbench --since today | grep public-key-enrollment</pre>
+    <div class="notice warn">工作台只绑定 <code>127.0.0.1</code>，没有独立登录认证；只在本机管理员浏览器中使用。持有已登记私钥的人都能以 <code>__WSL_USER__</code> 身份获得该账号权限。</div>
     <h3>修改/停止端口</h3>
     <p>输入 <code>1024-65535</code> 的端口并点击“应用”，确认 Windows UAC 后，管理脚本会更新 portproxy 和 Private/LocalSubnet 防火墙规则。点击“停止局域网访问”只停止 Windows 入口，不关闭 WSL 内部 sshd。</p>
     <p>其他电脑连接格式：</p>

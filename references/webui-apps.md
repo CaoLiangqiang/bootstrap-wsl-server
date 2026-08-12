@@ -10,10 +10,11 @@
 6. Configure Windows HTTPS access
 7. Install the client CA and verify the browser
 8. Add the optional startup wake task
-9. Back up secrets and persistent data
-10. CAN E2E pilot pattern
-11. Add later applications
-12. Verification and rollback
+9. Add the optional runtime recovery watchdog
+10. Back up secrets and persistent data
+11. CAN E2E pilot pattern
+12. Add later applications
+13. Verification and rollback
 
 ## 1. Scope and ownership
 
@@ -258,7 +259,52 @@ proves that SSH and every enabled WebUI start after a Windows cold boot without
 an interactive login. Do not run `wsl --shutdown` or reboot while users are
 connected.
 
-## 9. Back up secrets and persistent data
+## 9. Add the optional runtime recovery watchdog
+
+The startup task handles boot; the runtime watchdog handles a later idle or
+unexpectedly stopped WSL instance. It is a Windows Scheduled Task that checks
+the selected local listener ports every 12 minutes by default. If any check
+fails, it runs `wsl.exe -d DISTRO --exec /bin/true` to wake systemd. It does
+not run `wsl --shutdown`, restart SSH, modify portproxy, or expose the
+unauthenticated workbench.
+
+Copy and register it from an elevated Windows PowerShell session:
+
+```bash
+install -m 0644 scripts/Configure-WslRecoveryWatchdog.ps1 \
+  /mnt/c/Users/WINDOWS_USER/.wsl-server/Configure-WslRecoveryWatchdog.ps1
+```
+
+```powershell
+& "$env:USERPROFILE\.wsl-server\Configure-WslRecoveryWatchdog.ps1" `
+  -Distro Ubuntu -IntervalMinutes 12 -ListenPorts '2222,443,8080' `
+  -UserServices 'can-e2e-verifier.service,webui-gateway.service,wsl-server-workbench.service'
+```
+
+The task uses passwordless S4U/Limited execution, starts when available, and
+ignores overlapping runs. It owns only the task named `WSL DISTRO recovery
+watchdog` and the adjacent `recovery-watchdog-state.json`; it refuses to
+replace an unowned task or drifted managed state. Inspect it without elevation:
+
+```powershell
+& "$env:USERPROFILE\.wsl-server\Configure-WslRecoveryWatchdog.ps1" -Status
+```
+
+Remove only the managed task when it is no longer needed:
+
+```powershell
+& "$env:USERPROFILE\.wsl-server\Configure-WslRecoveryWatchdog.ps1" -Remove
+```
+
+The watchdog wakes WSL and idempotently starts only the explicitly configured
+systemd user services before checking the managed Windows listeners. Their
+service units remain responsible for normal process restart behavior. The workbench page itself polls its API and
+refreshes data about every 30 seconds; a browser that lost its TCP connection must
+reconnect or reload after the service returns. The workbench remains local to
+the Windows server host's browser at `http://127.0.0.1:4173` and must never be made reachable
+through the LAN HTTPS relay without adding a separate authenticated design.
+
+## 10. Back up secrets and persistent data
 
 Use encrypted Restic snapshots for local recovery. Keep its password file at
 mode `600` outside Git and keep an offline copy in an approved password
@@ -289,7 +335,7 @@ replacing live data. A repository on another drive in the same Windows
 computer is a local recovery layer, not disaster recovery. Add a separate
 managed device or remote repository for disaster recovery.
 
-## 10. CAN E2E pilot pattern
+## 11. CAN E2E pilot pattern
 
 The validated pilot used the CAN E2E requirements verifier as one application:
 
@@ -308,7 +354,7 @@ Use the pilot as a sequence and acceptance model, not as a source of fixed
 usernames, passwords, ports, hostnames, IP addresses, repository URLs,
 certificate fingerprints, or data paths.
 
-## 11. Add later applications
+## 12. Add later applications
 
 For each later project:
 
@@ -325,7 +371,7 @@ For each later project:
 Do not add one Windows firewall and portproxy rule per application when the
 shared authenticated gateway can own the LAN boundary.
 
-## 12. Verification and rollback
+## 13. Verification and rollback
 
 Before completion, verify:
 
@@ -339,7 +385,8 @@ ss -ltnp
 ```
 
 Also verify exact Windows portproxy and firewall filters, the startup task
-principal and last result, public CA fingerprint, unauthenticated `401`,
+principal and last result, recovery watchdog status and repetition interval,
+public CA fingerprint, unauthenticated `401`,
 authenticated `200`, current application version, Restic integrity, and a real
 client browser workflow. Recheck the SSH PID, socket listeners, and connected
 sessions to prove they were not interrupted.
@@ -348,9 +395,11 @@ Rollback in ownership order:
 
 1. Remove the managed Windows HTTPS relay with the PowerShell script's
    `-Remove` mode.
-2. Disable the gateway and application health timers without stopping SSH.
-3. Remove only the selected registry entry and generated links.
-4. Preserve credentials, Caddy PKI, Restic repository, snapshots, application
+2. Remove the managed runtime recovery watchdog with its `-Remove` mode if it
+   is being retired.
+3. Disable the gateway and application health timers without stopping SSH.
+4. Remove only the selected registry entry and generated links.
+5. Preserve credentials, Caddy PKI, Restic repository, snapshots, application
    data, and rollback exports unless the user separately authorizes purge.
 
 Fail closed when state has drifted. Inspect and reconcile ownership instead of

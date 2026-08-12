@@ -51,6 +51,38 @@ AUTHORIZED_KEYS_FILE="$authorized" bash "$skill_dir/scripts/add-ssh-public-key.s
 [ "$(ssh-keygen -lf "$authorized" | wc -l)" -eq 1 ]
 [ "$(stat -c %a "$(dirname "$authorized")")" = 700 ]
 [ "$(stat -c %a "$authorized")" = 600 ]
+[ "$(stat -c %a "${authorized}.lock")" = 600 ]
+
+ssh-keygen -q -t ed25519 -N '' -C self-test-two -f "$tmp_dir/key-two"
+multiple_keys="$tmp_dir/multiple.pub"
+{
+  cat "$tmp_dir/key.pub"
+  cat "$tmp_dir/key-two.pub"
+} > "$multiple_keys"
+if AUTHORIZED_KEYS_FILE="$authorized" bash "$skill_dir/scripts/add-ssh-public-key.sh" "$multiple_keys" >/dev/null 2>&1; then
+  printf 'Multiple public keys were accepted.\n' >&2
+  exit 1
+fi
+
+limited_authorized="$tmp_dir/limited/authorized_keys"
+install -d -m 0700 "$(dirname "$limited_authorized")"
+: > "$limited_authorized"
+if AUTHORIZED_KEYS_FILE="$limited_authorized" AUTHORIZED_KEYS_MAX_BYTES=10 \
+  bash "$skill_dir/scripts/add-ssh-public-key.sh" "$tmp_dir/key.pub" >/dev/null 2>&1; then
+  printf 'The authorized-keys size limit was not enforced.\n' >&2
+  exit 1
+fi
+[ ! -s "$limited_authorized" ]
+
+concurrent_authorized="$tmp_dir/concurrent/authorized_keys"
+install -d -m 0700 "$(dirname "$concurrent_authorized")"
+for _ in 1 2 3 4 5; do
+  AUTHORIZED_KEYS_FILE="$concurrent_authorized" \
+    bash "$skill_dir/scripts/add-ssh-public-key.sh" "$tmp_dir/key-two.pub" >/dev/null &
+done
+wait
+[ "$(ssh-keygen -lf "$concurrent_authorized" | wc -l)" -eq 1 ]
+[ "$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' "$concurrent_authorized")" -eq 1 ]
 
 rendered="$tmp_dir/rendered-workbench"
 bash "$skill_dir/scripts/install-workbench.sh" \

@@ -2,7 +2,18 @@
 set -u
 
 expected_user="${1:-$(id -un)}"
-config_file="${SSHD_DROPIN:-/etc/ssh/sshd_config.d/99-wsl-server.conf}"
+config_file="${SSHD_DROPIN:-}"
+if [ -z "$config_file" ]; then
+  for candidate in \
+    /etc/ssh/sshd_config.d/99-wsl-server.conf \
+    /etc/ssh/sshd_config.d/99-server.conf; do
+    if [ -r "$candidate" ]; then
+      config_file="$candidate"
+      break
+    fi
+  done
+fi
+config_file="${config_file:-/etc/ssh/sshd_config.d/99-wsl-server.conf}"
 failures=0
 pass() { printf '[PASS] %s\n' "$1"; }
 fail() { printf '[FAIL] %s\n' "$1"; failures=$((failures + 1)); }
@@ -19,7 +30,14 @@ run_check 'authorized_keys file mode 600' sh -c '[ ! -f "$HOME/.ssh/authorized_k
 if [ -r "$config_file" ]; then
   run_check 'root login denied' grep -Eq '^PermitRootLogin[[:space:]]+no$' "$config_file"
   run_check 'public-key login enabled' grep -Eq '^PubkeyAuthentication[[:space:]]+yes$' "$config_file"
-  run_check "AllowUsers contains $expected_user" grep -Eq "^AllowUsers[[:space:]]+.*(^|[[:space:]])${expected_user}([[:space:]]|$)" "$config_file"
+  run_check "AllowUsers contains $expected_user" awk -v "user=$expected_user" '
+    $1 == "AllowUsers" {
+      for (field = 2; field <= NF; field++) {
+        if ($field == user) found = 1
+      }
+    }
+    END { exit !found }
+  ' "$config_file"
 else
   fail 'managed sshd drop-in exists'
 fi

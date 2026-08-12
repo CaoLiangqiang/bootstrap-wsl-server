@@ -41,7 +41,8 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 11. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
 12. When the user requests hosted WebUIs, read `references/webui-apps.md` completely and apply Phase 2b only after SSH and the foundation are healthy. Render or install the shared operations baseline, register one loopback application, verify its health, configure the HTTPS gateway, apply the Windows relay, install the public CA on the actual client, and test the full browser workflow.
 13. Treat each later WebUI as a separate application-owned service. Use a separate hostname by default; use a path prefix only after confirming the application supports that base path.
-14. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
+14. When the user needs runtime recovery, install the optional Windows recovery watchdog from `references/webui-apps.md`; it wakes the selected WSL distribution and starts only explicitly configured user services before checking managed listeners, without restarting SSH or shutting down WSL.
+15. Read `references/operations.md` for normal administration or `references/troubleshooting.md` for failures.
 
 ## Success criteria
 
@@ -54,6 +55,7 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 - `wsl-server-host-manual.html` and `wsl-server-client-manual.html` exist with all template values resolved.
 - The Phase 1 foundation remains unchanged: no new mirrored mode, global DNS override, Docker proxy rewrite, or Windows AI cleanup occurred during the server extension.
 - When installed, the workbench and five-minute health timer are active and the dashboard is reachable only on `127.0.0.1:4173`.
+- When enabled, the Windows recovery watchdog is owned by this Skill, runs at the configured interval (12 minutes by default), wakes WSL, and starts only its explicitly configured systemd user services before checking managed listeners.
 - When Phase 2b is installed, every registered application and Caddy listener is loopback-only, each enabled health timer passes, and Windows has exactly one owned HTTPS relay with a `Private` and `LocalSubnet` firewall rule.
 - The unauthenticated HTTPS request returns `401`, authenticated HTTPS reaches the expected application version or health endpoint, and the public CA fingerprint is verified on the actual client without distributing any private CA material.
 - Any encrypted local backup fails when a required source is missing, passes `restic check`, and is described as a local recovery layer rather than disaster recovery.
@@ -74,3 +76,4 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 - Run `scripts/self-test-webui-apps.sh` after changing the Phase 2b installer, registry, health checker, Caddy template, or systemd templates.
 - Run `scripts/Configure-WslWebGatewayLan.ps1` only from elevated Windows PowerShell after the WSL gateway listener is healthy.
 - Use `scripts/Configure-WslStartupTask.ps1` to add the optional passwordless S4U boot wake task; retain existing logon tasks until a maintenance-window cold-start test passes.
+- Use `scripts/Configure-WslRecoveryWatchdog.ps1` for the optional periodic runtime wake check; inspect with `-Status` and remove only with `-Remove`. Keep its state file and task ownership intact.

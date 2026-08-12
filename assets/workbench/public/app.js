@@ -1,6 +1,7 @@
 'use strict';
 
-const state = { hours: 24, overview: null, toastTimer: null };
+const loginUser = '__WSL_USER__';
+const state = { hours: 24, overview: null, toastTimer: null, enrolling: false };
 
 const elements = {
   accessBody: document.querySelector('#access-body'),
@@ -22,12 +23,15 @@ const elements = {
   healthTime: document.querySelector('#health-time'),
   hostLabel: document.querySelector('#host-label'),
   keyPolicy: document.querySelector('#key-policy'),
+  keyList: document.querySelector('#key-list'),
   liveState: document.querySelector('#live-state'),
   networkMode: document.querySelector('#network-mode'),
   passwordButton: document.querySelector('#password-button'),
   passwordPolicy: document.querySelector('#password-policy'),
   portButton: document.querySelector('#port-button'),
   portInput: document.querySelector('#port-input'),
+  publicKeyButton: document.querySelector('#public-key-button'),
+  publicKeyFile: document.querySelector('#public-key-file'),
   proxyPill: document.querySelector('#proxy-pill'),
   publicPort: document.querySelector('#public-port'),
   refreshButton: document.querySelector('#refresh-button'),
@@ -166,6 +170,18 @@ function renderHealth(data) {
   elements.healthHistory.innerHTML = data.entries.slice(0, 24).reverse().map((entry) => `<span class="history-dot health-${entry.status}" title="${escapeHtml(new Date(entry.timestamp).toLocaleString('zh-CN', { hour12: false }))}"></span>`).join('');
 }
 
+function renderPublicKeys(data) {
+  const keys = Array.isArray(data.keys) ? data.keys : [];
+  if (!keys.length) {
+    elements.keyList.innerHTML = '<div class="key-list-empty">尚未录入公钥</div>';
+    return;
+  }
+  elements.keyList.innerHTML = `<div class="key-list-meta">已登记 ${data.count} 把</div>${keys.map((item) => `
+    <div class="key-entry"><i data-lucide="fingerprint-pattern"></i><code>${escapeHtml(item.fingerprint)}</code><span>${escapeHtml(item.algorithm)}</span></div>
+  `).join('')}`;
+  window.lucide.createIcons();
+}
+
 async function loadOverview() {
   renderOverview(await fetchJson('/api/overview'));
 }
@@ -178,10 +194,14 @@ async function loadHealth() {
   renderHealth(await fetchJson('/api/health?limit=24'));
 }
 
+async function loadPublicKeys() {
+  renderPublicKeys(await fetchJson('/api/keys'));
+}
+
 async function refreshAll(showMessage = false) {
   elements.refreshButton.classList.add('loading');
   try {
-    await Promise.all([loadOverview(), loadLogs(), loadHealth()]);
+    await Promise.all([loadOverview(), loadLogs(), loadHealth(), loadPublicKeys()]);
     if (showMessage) showToast('状态已刷新');
   } catch (error) {
     showToast(`刷新失败：${error.message}`, true);
@@ -220,6 +240,50 @@ elements.passwordButton.addEventListener('click', async () => {
     showToast(result.message);
   } catch (error) {
     showToast(error.message, true);
+  }
+});
+elements.publicKeyButton.addEventListener('click', () => {
+  if (!state.enrolling) elements.publicKeyFile.click();
+});
+elements.publicKeyFile.addEventListener('change', async () => {
+  const file = elements.publicKeyFile.files?.[0];
+  elements.publicKeyFile.value = '';
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.pub')) {
+    showToast('请选择 .pub 公钥文件', true);
+    return;
+  }
+  if (file.size > 16 * 1024) {
+    showToast('公钥文件不能超过 16 KiB', true);
+    return;
+  }
+
+  state.enrolling = true;
+  elements.publicKeyButton.disabled = true;
+  elements.publicKeyButton.classList.add('loading');
+  try {
+    const key = await file.text();
+    const preview = await runAction('/api/actions/public-key', { mode: 'preview', key });
+    const confirmed = window.confirm(`确认将这把 ${preview.algorithm} 公钥录入 ${loginUser}？\nSHA256 指纹：${preview.fingerprint}\n所有已录入公钥共用此账号；现有 SSH 连接不会受影响。`);
+    if (!confirmed) return;
+    const result = await runAction('/api/actions/public-key', { mode: 'add', key });
+    try {
+      await loadPublicKeys();
+    } catch (error) {
+      showToast(`公钥操作已完成，但列表刷新失败：${error.message}`, true);
+      return;
+    }
+    if (result.result === 'already-authorized') {
+      showToast(`该公钥已存在（${result.fingerprint}）`);
+    } else {
+      showToast(`公钥已加入（${result.fingerprint}），现有连接不受影响`);
+    }
+  } catch (error) {
+    showToast(`公钥录入失败：${error.message}`, true);
+  } finally {
+    state.enrolling = false;
+    elements.publicKeyButton.disabled = false;
+    elements.publicKeyButton.classList.remove('loading');
   }
 });
 elements.portButton.addEventListener('click', async () => {
