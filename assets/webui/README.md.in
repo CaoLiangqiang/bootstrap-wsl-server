@@ -9,6 +9,10 @@ application service, SSH, credentials, certificates, or Windows LAN rules.
 - Health path: `__HEALTH_PATH_TEXT__`
 - Gateway: `https://__GATEWAY_HOSTNAME__:__GATEWAY_PORT__`, bound to `127.0.0.1`
 
+The rendered gateway hostname is an internal server value. The client-facing
+URL should use the canonical `https://APP_ID.SERVER_NAME.local/` form through
+the Windows HTTPS relay; do not distribute the loopback gateway port.
+
 The installer creates private gateway configuration, Caddy data, and Caddy
 state directories with mode `700`. Create
 `%h/.config/webui-gateway/gateway.env` with mode `600`. It must define

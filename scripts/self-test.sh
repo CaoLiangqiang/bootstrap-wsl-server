@@ -190,6 +190,19 @@ cat > "$registry_fixture" <<'EOF'
 {
   "schema_version": 1,
   "gateway": {"hostname": "gateway.test-host", "listen": {"host": "127.0.0.1", "port": 8443}},
+  "sync_projects": [
+    {
+      "id": "private-sync-project",
+      "enabled": true,
+      "source_path": "/private/known-sync-source",
+      "source_origin": "ssh://git@private.example.invalid/group/project.git",
+      "remote": "origin",
+      "deploy_root": "/private/known-sync-deploy",
+      "sync_policy": "fetch-only",
+      "timeout_seconds": 60,
+      "retries": 1
+    }
+  ],
   "apps": [
     {
       "id": "visible-app",
@@ -273,6 +286,8 @@ if (JSON.stringify(overview).includes('invalid-hostname')) throw new Error('Expo
 if (JSON.stringify(overview).includes('untrusted-entry')) throw new Error('Exposed an untrusted gateway entry');
 if (JSON.stringify(overview).includes('wrong-gateway-port')) throw new Error('Exposed a mismatched gateway entry');
 if (JSON.stringify(overview).includes('known-secret-value')) throw new Error('Exposed a registry secret path');
+if (JSON.stringify(overview).includes('private-sync-project')) throw new Error('Exposed sync project metadata');
+if (JSON.stringify(overview).includes('known-sync-source')) throw new Error('Exposed a sync source path');
 NODE
 
 manuals="$tmp_dir/manuals"

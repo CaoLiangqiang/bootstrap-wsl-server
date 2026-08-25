@@ -17,10 +17,18 @@ the trust boundaries explicit:
   use `releases/<id>`, `shared`, and an atomic `current` symlink; switching is
   health-gated and automatically rolls back on failure.
 
+This is the formal delivered product shape: a reusable Phase 2 server Skill and
+its shell, PowerShell, Python, systemd, Caddy, and standalone HTML assets. It
+does not contain a business application or a hosted SaaS control plane. A
+developer supplies an application repository, service unit, health endpoint,
+secrets through approved local paths, and the current Windows host parameters;
+the Skill renders machine-specific configuration and keeps application
+listeners loopback-only behind the authenticated gateway.
+
 ## Supported Environment
 
 Use Ubuntu on WSL2 with a recent Windows 11 host, systemd support, Bash,
-Python 3, Node.js for the Workbench, `curl`, and GNU coreutils (`readlink`,
+Python 3.10 or newer, Node.js for the Workbench, `curl`, and GNU coreutils (`readlink`,
 `mv`, and `date`) for versioned switching. Phase 2b requires Caddy 2.6 or newer.
 Windows PowerShell scripts must run from an elevated PowerShell session when
 they change portproxy, firewall, startup, or watchdog state. The selected WSL
@@ -44,6 +52,15 @@ Use `references/setup-runbook.md` for first installation, `references/operations
 for daily operations, and `references/project-migration.md` for application
 migration. Render the optional WebUI layer with `scripts/install-webui-apps.sh
 --render-only` before any live installation.
+
+Optional project maintenance is registry-driven and disabled until
+`sync_projects` entries are added and its user timer is explicitly enabled.
+The default `fetch-only` policy updates remote refs without changing the source
+worktree or production deployment. `stage-release` can prepare one approved,
+immutable tag or full commit under `releases`, but never changes `current`.
+`auto-deploy` is reserved in the schema and deliberately rejected. See
+[`references/project-sync.md`](references/project-sync.md) for the registry,
+render-only installation, reports, and deploy-key boundaries.
 
 ## Upgrade And Rollback
 
@@ -86,10 +103,12 @@ Run the repository self-tests after changing templates or scripts:
 
 ```bash
 bash scripts/self-test-webui-apps.sh
+bash scripts/self-test-project-sync.sh
 bash scripts/self-test.sh
 ```
 
 The scripts also exercise render-only installation, registry validation,
-loopback and redirect checks, generated manuals, SSH key enrollment, and the
-versioned-release dry-run. Live changes require the preflight, backup, health,
-rollback, and client acceptance evidence described in the references.
+loopback and redirect checks, project-sync fixtures, generated manuals, SSH key
+enrollment, and the versioned-release dry-run. Live changes require the
+preflight, backup, health, rollback, and client acceptance evidence described
+in the references.

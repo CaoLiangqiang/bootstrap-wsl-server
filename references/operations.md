@@ -134,6 +134,12 @@ credentials, and disabled or loopback-only applications are not returned to
 the browser. Keep the registry gateway metadata aligned with the live Caddy
 site and Windows HTTPS relay whenever an application hostname changes.
 
+Use the normalized client URL form `https://APP_ID.SERVER_NAME.local/` for every
+application. Do not give users the WSL address, internal application port,
+gateway port `8443`, or the loopback Workbench address. If DNS is unavailable,
+provide a hosts-file mapping for the canonical names to the current Windows
+LAN IP and keep the public CA certificate hostname-aligned.
+
 For versioned applications, treat the source checkout and production runtime as
 separate objects. The registry records both `source_path` and a `deployment`
 object containing `deploy_root`, `current_path`, `current_release`,
@@ -159,6 +165,11 @@ after health succeeds. Keep at least current and previous known-good releases,
 and never delete a release referenced by `current`, a running process, or the
 documented rollback procedure. Secrets, databases, uploads, reports, and logs
 remain under `shared` and are never copied into a release.
+
+For scheduled remote maintenance, follow `project-sync.md`. The project-sync
+timer is opt-in and performs only registry-approved fetch or staging; it never
+updates a working tree or `current`. Review the private state report and staged
+release before using `switch-versioned-release.sh` manually.
 
 ## 7. Manual regeneration and delivery
 

@@ -14,7 +14,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -24,6 +24,8 @@ APP_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 UNIT_RE = re.compile(r"^[A-Za-z0-9_.:@-]+\.service$")
 RELEASE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/+\-]{0,127}$")
+SAFE_SYNC_PATH_RE = re.compile(r"^/[A-Za-z0-9._+@/-]+$")
 HOST_RE = re.compile(
     r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*\Z"
 )
@@ -77,6 +79,19 @@ def valid_absolute_path(value: Any, context: str) -> str:
     if not path.startswith("/") or any(char.isspace() for char in path):
         raise RegistryError(f"{context} must be an absolute path without whitespace")
     return path.rstrip("/") or "/"
+
+
+def valid_sync_path(value: Any, context: str) -> str:
+    path = valid_text(value, context, 4096)
+    parts = PurePosixPath(path).parts
+    if (
+        path == "/"
+        or not SAFE_SYNC_PATH_RE.fullmatch(path)
+        or "//" in path
+        or any(part in {".", ".."} for part in parts)
+    ):
+        raise RegistryError(f"{context} must be a safe absolute path")
+    return path
 
 
 def valid_public_port(value: Any, context: str) -> int:
@@ -136,6 +151,92 @@ def valid_health_url(value: Any, port: int, context: str) -> str:
     return url
 
 
+def valid_git_origin(value: Any, context: str) -> str:
+    origin = valid_text(value, context, 2048)
+    if re.fullmatch(r"[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s]+", origin):
+        return origin
+    parsed = urllib.parse.urlsplit(origin)
+    if parsed.scheme not in {"https", "ssh"} or not parsed.hostname:
+        raise RegistryError(f"{context} must be an HTTPS, SSH, or SCP-style Git URL")
+    if parsed.password is not None or parsed.query or parsed.fragment:
+        raise RegistryError(f"{context} must not contain credentials, a query, or a fragment")
+    if parsed.scheme == "https" and parsed.username is not None:
+        raise RegistryError(f"{context} must not contain HTTPS userinfo")
+    return origin
+
+
+def valid_git_tag(value: str) -> bool:
+    if not TAG_RE.fullmatch(value) or value.startswith("refs/"):
+        return False
+    if value.endswith((".", "/", ".lock")) or ".." in value or "@{" in value or "//" in value:
+        return False
+    return all(part and not part.startswith(".") and not part.endswith(".lock") for part in value.split("/"))
+
+
+def validate_sync_projects(value: Any) -> None:
+    if not isinstance(value, list):
+        raise RegistryError("sync_projects must be an array")
+    ids: set[str] = set()
+    for index, project in enumerate(value):
+        context = f"sync_projects[{index}]"
+        required = {
+            "id", "enabled", "source_path", "source_origin", "remote", "deploy_root",
+            "sync_policy", "timeout_seconds", "retries",
+        }
+        optional = {"stage_release"}
+        if not isinstance(project, dict) or required - set(project) or set(project) - required - optional:
+            raise RegistryError(f"{context} contains missing or unknown keys")
+        project_id = valid_text(project["id"], f"{context}.id", 32)
+        if not APP_ID_RE.fullmatch(project_id) or project_id in ids:
+            raise RegistryError(f"{context}.id is invalid or duplicate")
+        ids.add(project_id)
+        if type(project["enabled"]) is not bool:
+            raise RegistryError(f"{context}.enabled must be boolean")
+        valid_sync_path(project["source_path"], f"{context}.source_path")
+        valid_sync_path(project["deploy_root"], f"{context}.deploy_root")
+        valid_git_origin(project["source_origin"], f"{context}.source_origin")
+        if project["remote"] != "origin":
+            raise RegistryError(f"{context}.remote must be origin")
+        policy = project["sync_policy"]
+        if policy not in {"fetch-only", "stage-release", "auto-deploy"}:
+            raise RegistryError(f"{context}.sync_policy is invalid")
+        if type(project["timeout_seconds"]) is not int or not 5 <= project["timeout_seconds"] <= 900:
+            raise RegistryError(f"{context}.timeout_seconds must be from 5 to 900")
+        if type(project["retries"]) is not int or not 0 <= project["retries"] <= 3:
+            raise RegistryError(f"{context}.retries must be from 0 to 3")
+        if policy != "stage-release":
+            if "stage_release" in project:
+                raise RegistryError(f"{context}.stage_release is allowed only for stage-release")
+            continue
+        selector = project.get("stage_release")
+        selector_keys = {"kind", "value", "expected_commit", "release_id", "verify_hook", "verify_args"}
+        if not isinstance(selector, dict) or set(selector) != selector_keys:
+            raise RegistryError(f"{context}.stage_release keys differ")
+        kind = selector["kind"]
+        selected = valid_text(selector["value"], f"{context}.stage_release.value", 128)
+        expected = valid_text(selector["expected_commit"], f"{context}.stage_release.expected_commit", 40)
+        release_id = valid_text(selector["release_id"], f"{context}.stage_release.release_id", 128)
+        if kind not in {"tag", "commit"}:
+            raise RegistryError(f"{context}.stage_release.kind is invalid")
+        if kind == "tag" and not valid_git_tag(selected):
+            raise RegistryError(f"{context}.stage_release.value is not an exact tag")
+        if kind == "commit" and not COMMIT_RE.fullmatch(selected):
+            raise RegistryError(f"{context}.stage_release.value must be a full commit")
+        if not COMMIT_RE.fullmatch(expected) or (kind == "commit" and selected != expected):
+            raise RegistryError(f"{context}.stage_release.expected_commit is invalid")
+        if not RELEASE_RE.fullmatch(release_id):
+            raise RegistryError(f"{context}.stage_release.release_id is invalid")
+        hook = valid_text(selector["verify_hook"], f"{context}.stage_release.verify_hook", 256)
+        hook_path = PurePosixPath(hook)
+        if hook_path.is_absolute() or ".." in hook_path.parts or hook.endswith("/"):
+            raise RegistryError(f"{context}.stage_release.verify_hook is unsafe")
+        args = selector["verify_args"]
+        if not isinstance(args, list) or len(args) > 32:
+            raise RegistryError(f"{context}.stage_release.verify_args must be an array")
+        for argument_index, argument in enumerate(args):
+            valid_text(argument, f"{context}.stage_release.verify_args[{argument_index}]", 1024)
+
+
 def load_registry(path: Path) -> list[dict[str, Any]]:
     try:
         if path.stat().st_size > MAX_REGISTRY_BYTES:
@@ -150,10 +251,11 @@ def load_registry(path: Path) -> list[dict[str, Any]]:
         raise RegistryError("registry must be an object")
     root = document
     root_keys = set(root)
-    if root_keys - {"schema_version", "gateway", "apps"} or {"schema_version", "apps"} - root_keys:
+    if root_keys - {"schema_version", "gateway", "sync_projects", "apps"} or {"schema_version", "apps"} - root_keys:
         raise RegistryError("registry contains missing or unknown keys")
     if type(root["schema_version"]) is not int or root["schema_version"] != 1:
         raise RegistryError("schema_version must be integer 1")
+    validate_sync_projects(root.get("sync_projects", []))
 
     gateway_port: int | None = None
     if "gateway" in root:
@@ -164,8 +266,8 @@ def load_registry(path: Path) -> list[dict[str, Any]]:
             raise RegistryError("gateway.listen.host must be 127.0.0.1")
         gateway_port = valid_port(gateway_listen["port"], "gateway.listen.port")
 
-    if not isinstance(root["apps"], list) or not root["apps"]:
-        raise RegistryError("apps must be a non-empty array")
+    if not isinstance(root["apps"], list):
+        raise RegistryError("apps must be an array")
     ids: set[str] = set()
     ports = {gateway_port} if gateway_port is not None else set()
     apps: list[dict[str, Any]] = []
