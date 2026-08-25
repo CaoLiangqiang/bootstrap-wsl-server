@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
 const { chmod, lstat, mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
 const os = require('node:os');
@@ -20,6 +21,8 @@ const windowsWsl = 'C:\\Windows\\System32\\wsl.exe';
 const healthCheckScript = path.join(__dirname, 'scripts', 'health-check.js');
 const publicKeyScript = path.join(__dirname, 'scripts', 'add-ssh-public-key.sh');
 const authorizedKeysPath = path.join(os.homedir(), '.ssh', 'authorized_keys');
+const webuiRegistryPath = process.env.WEBUI_REGISTRY_PATH
+  || path.join(os.homedir(), 'wsl-server', 'apps', 'registry.json');
 const publicKeyMaxBytes = 16 * 1024;
 const publicKeyRequestMaxBytes = 24 * 1024;
 const authorizedKeysMaxBytes = 64 * 1024;
@@ -93,6 +96,52 @@ function parseResolver(text) {
   return { nameservers, search };
 }
 
+function isValidGatewayHostname(value) {
+  return typeof value === 'string'
+    && value.length <= 253
+    && value !== 'localhost'
+    && net.isIP(value) === 0
+    && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value);
+}
+
+async function getWebuiApplications() {
+  const registry = JSON.parse(await readFile(webuiRegistryPath, 'utf8'));
+  if (!Array.isArray(registry.apps)) return [];
+  const rootGateway = registry?.gateway?.listen;
+  let rootGatewayPort = null;
+  if (registry.gateway !== undefined) {
+    if (rootGateway?.host !== '127.0.0.1' || !Number.isInteger(rootGateway?.port)
+      || rootGateway.port < 1024 || rootGateway.port > 65535) return [];
+    rootGatewayPort = rootGateway.port;
+  }
+
+  return registry.apps.flatMap((app) => {
+    const gateway = app?.gateway;
+    const hostname = gateway?.hostname;
+    const windowsPort = gateway?.windows_listen_port;
+    const wslListenMatch = /^127\.0\.0\.1:([0-9]+)$/.exec(gateway?.wsl_listen || '');
+    const wslPort = wslListenMatch ? Number(wslListenMatch[1]) : null;
+    if (app?.enabled !== true || !isValidGatewayHostname(hostname)
+      || !Number.isInteger(windowsPort) || windowsPort < 1 || windowsPort > 65535
+      || gateway?.tls !== 'internal-ca' || gateway?.authentication !== 'basic'
+      || !Number.isInteger(wslPort) || wslPort < 1024 || wslPort > 65535
+      || (rootGatewayPort !== null && wslPort !== rootGatewayPort)) {
+      return [];
+    }
+    const portSuffix = windowsPort === 443 ? '' : `:${windowsPort}`;
+    return [{
+      id: String(app.id || ''),
+      displayName: String(app.display_name || app.id || hostname),
+      version: typeof app.version === 'string' ? app.version : null,
+      url: `https://${hostname}${portSuffix}/`,
+      authentication: typeof gateway.authentication === 'string'
+        ? gateway.authentication
+        : null,
+      tls: typeof gateway.tls === 'string' ? gateway.tls : null
+    }];
+  });
+}
+
 async function getWindowsState() {
   if (windowsStateCache.value && Date.now() < windowsStateCache.expiresAt) {
     return windowsStateCache.value;
@@ -128,7 +177,8 @@ async function getOverview() {
     routeRaw,
     resolverRaw,
     sshConfigRaw,
-    windows
+    windows,
+    applications
   ] = await Promise.all([
     attempt(() => runText('systemctl', ['is-active', 'ssh']), 'unknown'),
     attempt(() => runText('systemctl', ['is-enabled', 'ssh.socket']), 'unknown'),
@@ -143,7 +193,8 @@ async function getOverview() {
       portProxy: null,
       firewall: null,
       startupTask: null
-    })
+    }),
+    attempt(() => getWebuiApplications(), [])
   ]);
 
   const addressData = JSON.parse(addressesRaw);
@@ -169,7 +220,8 @@ async function getOverview() {
       sshSocket
     },
     sshPolicy: parseSshConfig(sshConfigRaw),
-    windows
+    windows,
+    applications
   };
 }
 

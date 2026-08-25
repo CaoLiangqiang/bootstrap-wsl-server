@@ -6,6 +6,8 @@ const state = { hours: 24, overview: null, toastTimer: null, enrolling: false };
 const elements = {
   accessBody: document.querySelector('#access-body'),
   allowedUsers: document.querySelector('#allowed-users'),
+  applicationCount: document.querySelector('#application-count'),
+  applicationList: document.querySelector('#application-list'),
   authMode: document.querySelector('#auth-mode'),
   blockedCount: document.querySelector('#blocked-count'),
   defaultRoute: document.querySelector('#default-route'),
@@ -85,6 +87,30 @@ function renderEndpoints(overview) {
   }).join('');
 }
 
+function renderApplications(applications) {
+  const entries = Array.isArray(applications) ? applications : [];
+  elements.applicationCount.textContent = entries.length ? `${entries.length} 个入口` : '未登记';
+  elements.applicationCount.className = `status-pill ${entries.length ? 'good' : 'bad'}`;
+  if (!entries.length) {
+    elements.applicationList.innerHTML = '<div class="empty-cell">当前没有已登记的 WebUI 入口</div>';
+    return;
+  }
+  elements.applicationList.innerHTML = entries.map((application) => {
+    const label = application.version
+      ? `${application.displayName} · ${application.version}`
+      : application.displayName;
+    return `
+      <div class="application-entry">
+        <span class="endpoint-icon"><i data-lucide="app-window"></i></span>
+        <div>
+          <span>${escapeHtml(label)}</span>
+          <a class="application-link" href="${escapeHtml(application.url)}" target="_blank" rel="noreferrer">${escapeHtml(application.url)}</a>
+        </div>
+        <button class="copy-button" data-copy="${escapeHtml(application.url)}" title="复制应用网址" aria-label="复制应用网址"><i data-lucide="copy"></i></button>
+      </div>`;
+  }).join('');
+}
+
 function renderOverview(overview) {
   state.overview = overview;
   const proxy = overview.windows.portProxy;
@@ -118,6 +144,7 @@ function renderOverview(overview) {
   elements.startupTask.textContent = overview.windows.startupTask?.exists ? overview.windows.startupTask.state : '缺失';
 
   renderEndpoints(overview);
+  renderApplications(overview.applications);
   window.lucide.createIcons();
 }
 

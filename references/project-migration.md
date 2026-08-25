@@ -275,6 +275,59 @@ curl --fail --max-time 5 http://127.0.0.1:APP_PORT/HEALTH_PATH
 
 ## 8. 服务化
 
+### 8.1 版本化运行目录
+
+生产服务不得直接运行会被开发、同步或 Git 操作改变的 source checkout。应用在
+服务器上同时保留源工作区和独立部署根目录，推荐布局为：
+
+```text
+~/wsl-server/apps/APP_ID/
+  releases/
+    VERSION-COMMIT/
+      .release.json
+      application code and release-local dependencies
+  shared/
+    config/
+    data/
+    logs/
+    runtime/
+  current -> releases/VERSION-COMMIT
+```
+
+`releases/RELEASE_ID` 必须由一个明确、干净且已批准的 commit 构建，不能包含
+`.git`、真实 `.env`、数据库、上传内容或业务日志。Python virtualenv、Node
+`node_modules` 和编译产物属于 release：它们可能随版本改变，必须和代码一起
+回滚。`shared` 只保留跨版本状态，例如私有配置、数据库、上传、报告和明确的
+运行临时目录；通过绝对环境变量或经核对的符号链接接入 release。
+
+每个 `.release.json` 至少记录 release ID、完整 Git commit、版本和 shared 路径，
+不能包含秘密值。release 在切换后视为不可变；修复必须生成新 release。创建
+`current` 时使用同一文件系统上的临时符号链接加原子 rename，不能逐文件覆盖
+正在运行的目录。服务的 `WorkingDirectory`、`ExecStart` 和所有辅助进程都必须
+经过 `current`，不能引用 source checkout。
+
+切换前必须验证：source HEAD/clean、磁盘空间、依赖与构建、配置和数据边界、
+数据库迁移兼容性、原 unit/registry 备份、former current 健康及精确恢复命令。
+不明写入、不可逆迁移、shared 冲突或不足空间都应停止迁移。
+
+已完成 staging 后使用：
+
+```bash
+bash scripts/switch-versioned-release.sh \
+  --deploy-root /home/SERVER_USER/wsl-server/apps/APP_ID \
+  --release-id VERSION-COMMIT \
+  --service APP_ID.service \
+  --health-url http://127.0.0.1:APP_PORT/HEALTH_PATH
+```
+
+脚本先要求旧版本健康，再原子切换 `current`、只重启列出的应用用户服务并等待
+所有健康 URL；失败会自动恢复 former current、再次重启并检查。它不修改 registry、
+Caddy 或 Windows 网络。首次迁移还必须人工实测一次 former current 回滚和新
+release 恢复，并记录两次恢复耗时。保留至少 current 和 previous 两个已验证
+release；仅在当前版本稳定、备份有效且没有进程引用旧 release 后才删除更早版本。
+
+### 8.2 systemd 单元
+
 应用仓库应提供可审查的 systemd 用户服务模板。下面是最小参考，必须替换全部
 占位符并按应用测试调整限制：
 
@@ -288,9 +341,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-WorkingDirectory=/home/SERVER_USER/codebase/APP_ID
-EnvironmentFile=/home/SERVER_USER/.config/APP_ID/app.env
-ExecStart=/home/SERVER_USER/codebase/APP_ID/PATH_TO_EXECUTABLE --host 127.0.0.1 --port APP_PORT
+WorkingDirectory=/home/SERVER_USER/wsl-server/apps/APP_ID/current
+EnvironmentFile=/home/SERVER_USER/wsl-server/apps/APP_ID/shared/config/app.env
+ExecStart=/home/SERVER_USER/wsl-server/apps/APP_ID/current/PATH_TO_EXECUTABLE --host 127.0.0.1 --port APP_PORT
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -338,6 +391,11 @@ bash scripts/install-webui-apps.sh \
   --gateway-hostname APP_HOSTNAME \
   --gateway-port GATEWAY_LOOPBACK_PORT \
   --caddy-bin /ABSOLUTE/PATH/TO/CADDY \
+  --source-path /home/SERVER_USER/codebase/APP_ID \
+  --deploy-root /home/SERVER_USER/wsl-server/apps/APP_ID \
+  --release-id VERSION-COMMIT \
+  --source-commit FULL_GIT_COMMIT \
+  --app-version VERSION \
   --render-only /tmp/APP_ID-webui-render
 ```
 

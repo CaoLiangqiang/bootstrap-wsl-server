@@ -64,7 +64,7 @@ if [ -z "$windows_hostname" ]; then
   fi
 fi
 windows_hostname="${windows_hostname:-$(hostname)}"
-for file in $(find "$stage" -type f \( -name '*.js' -o -name '*.html' -o -name '*.ps1' -o -name '*.json' \)); do
+while IFS= read -r -d '' file; do
   sed -i \
     -e "s|__WSL_USER__|$(escape_sed "$wsl_user")|g" \
     -e "s|__WINDOWS_USER__|$(escape_sed "$windows_user")|g" \
@@ -72,7 +72,7 @@ for file in $(find "$stage" -type f \( -name '*.js' -o -name '*.html' -o -name '
     -e "s|__SSH_PORT__|$ssh_port|g" \
     -e "s|__WINDOWS_HOSTNAME__|$(escape_sed "$windows_hostname")|g" \
     -e "s|__GENERATED_DATE__|$(date +%F)|g" "$file"
-done
+done < <(find "$stage" -type f \( -name '*.js' -o -name '*.html' -o -name '*.ps1' -o -name '*.json' \) -print0)
 
 if [ -n "$render_only" ]; then
   install -d -m 0755 "$render_only"

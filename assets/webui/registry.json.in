@@ -13,6 +13,17 @@
       "display_name": "__APP_NAME_JSON__",
       "enabled": true,
       "service_unit": "__SERVICE_UNIT__",
+      "source_path": "__SOURCE_PATH__",
+      "version": "__APP_VERSION__",
+      "git_commit": "__SOURCE_COMMIT__",
+      "deployment": {
+        "strategy": "versioned-current-symlink",
+        "deploy_root": "__DEPLOY_ROOT__",
+        "current_path": "__DEPLOY_ROOT__/current",
+        "current_release": "__RELEASE_ID__",
+        "release_path": "__DEPLOY_ROOT__/releases/__RELEASE_ID__",
+        "source_commit": "__SOURCE_COMMIT__"
+      },
       "listen": {
         "host": "127.0.0.1",
         "port": __APP_PORT__
@@ -24,6 +35,13 @@
         ],
         "timeout_seconds": 5,
         "max_same_origin_redirects": 3
+      },
+      "gateway": {
+        "hostname": "__GATEWAY_HOSTNAME__",
+        "windows_listen_port": 443,
+        "wsl_listen": "127.0.0.1:__GATEWAY_PORT__",
+        "tls": "internal-ca",
+        "authentication": "basic"
       }
     }
   ]
