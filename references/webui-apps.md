@@ -27,6 +27,14 @@ Each application repository continues to own its source, dependencies,
 business service unit, environment files, migrations, reports, and application
 tests. Do not copy application secrets into this Skill or the registry.
 
+Long-running services use a separate application deployment root with
+`releases/RELEASE_ID`, `shared`, and an atomic `current` symlink. Dependencies
+and build output stay with each release; secrets, persistent data, logs, and
+explicit runtime state stay under `shared`. Production units must start through
+`current`, never through the mutable source checkout. Once a previous
+known-good release exists, record its ID and path in the registry deployment
+object so the rollback target is explicit.
+
 Keep the live operational tree under `~/wsl-server/apps`. Keep reusable source
 templates in this repository. Required systemd and Windows registrations may
 point to the operational tree but must remain thin.
@@ -56,7 +64,7 @@ Preserve these boundaries:
 - Do not treat the registry as proof of Windows firewall, TLS, or
   authentication state. Verify those layers directly.
 
-Require Python 3, systemd user services, Caddy 2.6 or newer, a mounted Windows
+Require Python 3, `curl`, GNU coreutils, systemd user services, Caddy 2.6 or newer, a mounted Windows
 profile for script deployment, and a WebUI application that can listen on
 loopback. Obtain Caddy through an approved package source and verify the
 package or binary; do not commit the binary to this repository.
@@ -111,6 +119,11 @@ bash scripts/install-webui-apps.sh \
   --gateway-hostname WINDOWS_HOSTNAME \
   --gateway-port 8443 \
   --caddy-bin /path/to/caddy \
+  --source-path /home/SERVER_USER/codebase/APP_ID \
+  --deploy-root /home/SERVER_USER/wsl-server/apps/APP_ID \
+  --release-id VERSION-COMMIT \
+  --source-commit FULL_GIT_COMMIT \
+  --app-version VERSION \
   --render-only /tmp/webui-render
 ```
 
@@ -359,8 +372,10 @@ certificate fingerprints, or data paths.
 For each later project:
 
 1. Clone or synchronize the application repository under the normal codebase.
-2. Adapt and test its Linux service without LAN exposure.
-3. Bind it to an unused loopback port and add a cheap health endpoint.
+2. Stage an immutable versioned release with release-local dependencies and
+   shared config/data, then adapt and test its Linux service without LAN exposure.
+3. Point every service command through `current`, bind it to an unused loopback
+   port, and add a cheap health endpoint.
 4. Register only paths to secrets and persistent data.
 5. Enable one health timer instance and verify it.
 6. Choose a dedicated hostname unless base-path support is proven.

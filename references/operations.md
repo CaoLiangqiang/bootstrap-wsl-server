@@ -127,6 +127,39 @@ kept alive by the server; after recovery the browser may need to reconnect or
 reload. The console is intentionally available only in the Windows server
 host's local browser at `http://127.0.0.1:4173`.
 
+The overview lists enabled WebUI applications that have a registered Windows
+gateway hostname and listen port. It reads only display metadata from
+`~/wsl-server/apps/registry.json`; internal application ports, secret paths,
+credentials, and disabled or loopback-only applications are not returned to
+the browser. Keep the registry gateway metadata aligned with the live Caddy
+site and Windows HTTPS relay whenever an application hostname changes.
+
+For versioned applications, treat the source checkout and production runtime as
+separate objects. The registry records both `source_path` and a `deployment`
+object containing `deploy_root`, `current_path`, `current_release`,
+`release_path`, and the full source commit. After the first successful switch,
+also record the paired optional fields `previous_release` and
+`previous_release_path` for the retained known-good release. Confirm the live
+unit and process resolve through `current` before reporting a deployment as
+complete.
+
+Stage and validate a new immutable release before switching it. Then run:
+
+```bash
+bash scripts/switch-versioned-release.sh \
+  --deploy-root /home/SERVER_USER/wsl-server/apps/APP_ID \
+  --release-id VERSION-COMMIT \
+  --service APP_ID.service \
+  --health-url http://127.0.0.1:APP_PORT/HEALTH_PATH
+```
+
+The script requires a healthy former release and health-gates the new release;
+failure restores former `current` automatically. Update registry metadata only
+after health succeeds. Keep at least current and previous known-good releases,
+and never delete a release referenced by `current`, a running process, or the
+documented rollback procedure. Secrets, databases, uploads, reports, and logs
+remain under `shared` and are never copied into a release.
+
 ## 7. Manual regeneration and delivery
 
 Regenerate the standalone manuals after changing any connection parameter:

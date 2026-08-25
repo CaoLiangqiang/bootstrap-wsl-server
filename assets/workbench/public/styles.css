@@ -90,6 +90,14 @@ h2 { margin: 0; font-size: 15px; line-height: 1.25; letter-spacing: 0; }
 .copy-button:hover { color: var(--green); border-color: #a9cab7; }
 .copy-button svg { width: 15px; }
 
+.application-list { display: grid; }
+.application-entry { min-height: 76px; padding: 14px 20px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; border-bottom: 1px solid var(--line); }
+.application-entry > div { min-width: 0; }
+.application-entry:last-child { border-bottom: 0; }
+.application-entry span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+.application-link { display: block; color: var(--ink); font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; text-decoration: none; }
+.application-link:hover { color: var(--green); text-decoration: underline; }
+
 .access-heading { flex-wrap: wrap; }
 .segmented { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-soft); }
 .segmented button { min-width: 38px; height: 28px; padding: 0 9px; border: 0; color: var(--muted); background: transparent; border-radius: 4px; font-size: 11px; }
@@ -209,7 +217,8 @@ input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23, 122, 76
 @media (max-width: 680px) {
   .topbar { height: 66px; padding: 0 16px; }
   .live-state { display: none; }
-  .manual-link span { display: none; }
+  .manual-link { display: none; }
+  .topbar-actions { gap: 8px; }
   main { padding: 16px 12px 28px; }
   .status-strip { gap: 8px; }
   .metric { min-height: 76px; padding: 12px; }

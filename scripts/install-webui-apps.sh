@@ -9,6 +9,11 @@ health_path=''
 gateway_hostname=''
 gateway_port=''
 caddy_bin=''
+source_path=''
+deploy_root=''
+release_id=''
+source_commit=''
+app_version=''
 install_dir="${HOME}/wsl-server/apps"
 render_only=''
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +22,9 @@ usage() {
   cat <<'EOF'
 Usage: install-webui-apps.sh --app-id ID --app-name NAME --service-unit UNIT \
   --app-port PORT --health-path PATH --gateway-hostname HOST \
-  --gateway-port PORT --caddy-bin ABS_PATH [--install-dir ABS_PATH] \
+  --gateway-port PORT --caddy-bin ABS_PATH --source-path ABS_PATH \
+  --deploy-root ABS_PATH --release-id ID --source-commit COMMIT \
+  --app-version VERSION [--install-dir ABS_PATH] \
   [--render-only OUTPUT_DIR]
 
 Renders the optional Phase 2b WebUI operations layer. Normal installation links
@@ -36,6 +43,11 @@ while [ "$#" -gt 0 ]; do
     --gateway-hostname) gateway_hostname="${2:-}"; shift 2 ;;
     --gateway-port) gateway_port="${2:-}"; shift 2 ;;
     --caddy-bin) caddy_bin="${2:-}"; shift 2 ;;
+    --source-path) source_path="${2:-}"; shift 2 ;;
+    --deploy-root) deploy_root="${2:-}"; shift 2 ;;
+    --release-id) release_id="${2:-}"; shift 2 ;;
+    --source-commit) source_commit="${2:-}"; shift 2 ;;
+    --app-version) app_version="${2:-}"; shift 2 ;;
     --install-dir) install_dir="${2:-}"; shift 2 ;;
     --render-only) render_only="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -59,6 +71,12 @@ fail() { printf '%s\n' "$1" >&2; exit 2; }
 [[ "$gateway_port" =~ ^[0-9]+$ ]] && (( gateway_port >= 1024 && gateway_port <= 65535 )) || fail 'Invalid --gateway-port.'
 (( gateway_port != app_port && gateway_port != 4173 )) || fail 'Gateway port conflicts with another reserved port.'
 [[ "$caddy_bin" == /* && "$caddy_bin" != *[[:space:]]* ]] || fail '--caddy-bin must be an absolute path without whitespace.'
+[[ "$source_path" == /* && "$source_path" != *[[:space:]]* ]] || fail '--source-path must be an absolute path without whitespace.'
+[[ "$deploy_root" == /* && "$deploy_root" != *[[:space:]]* ]] || fail '--deploy-root must be an absolute path without whitespace.'
+[[ "$release_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || fail 'Invalid --release-id.'
+[[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || fail '--source-commit must be a full lowercase Git commit.'
+[ -n "$app_version" ] && [ "${#app_version}" -le 64 ] || fail 'Invalid --app-version.'
+[[ "$app_version" != *$'\n'* && "$app_version" != *$'\r'* ]] || fail 'Invalid --app-version.'
 [[ "$install_dir" == /* && "$install_dir" != *[[:space:]]* ]] || fail '--install-dir must be an absolute path without whitespace.'
 [ ! -L "$install_dir" ] || fail '--install-dir must not be a symlink.'
 if [ -n "$render_only" ]; then
@@ -80,13 +98,15 @@ find "$stage" -type f -name '*.py[co]' -delete
 find "$stage" -depth -type d -name __pycache__ -delete
 
 python3 - "$stage" "$install_dir" "$app_id" "$app_name" "$service_unit" \
-  "$app_port" "$health_path" "$gateway_hostname" "$gateway_port" "$caddy_bin" <<'PY'
+  "$app_port" "$health_path" "$gateway_hostname" "$gateway_port" "$caddy_bin" \
+  "$source_path" "$deploy_root" "$release_id" "$source_commit" "$app_version" <<'PY'
 import json
 import pathlib
 import sys
 
 (stage, install_dir, app_id, app_name, service_unit, app_port, health_path,
- gateway_hostname, gateway_port, caddy_bin) = sys.argv[1:]
+ gateway_hostname, gateway_port, caddy_bin, source_path, deploy_root,
+ release_id, source_commit, app_version) = sys.argv[1:]
 root = pathlib.Path(stage)
 replacements = {
     "__INSTALL_DIR__": install_dir,
@@ -100,6 +120,11 @@ replacements = {
     "__GATEWAY_HOSTNAME__": gateway_hostname,
     "__GATEWAY_PORT__": gateway_port,
     "__CADDY_BIN__": caddy_bin,
+    "__SOURCE_PATH__": source_path,
+    "__DEPLOY_ROOT__": deploy_root,
+    "__RELEASE_ID__": release_id,
+    "__SOURCE_COMMIT__": source_commit,
+    "__APP_VERSION__": app_version,
 }
 for source in sorted(root.rglob("*.in")):
     text = source.read_text(encoding="utf-8")

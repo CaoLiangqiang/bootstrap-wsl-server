@@ -40,6 +40,13 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 10. Install the optional dashboard with `bash scripts/install-workbench.sh --windows-user WINDOWS_USER --distro DISTRO --ssh-port PORT`; this also refreshes all three standalone manuals.
 11. Test from the actual client with `BatchMode=yes`, `IdentitiesOnly=yes`, and `IdentityAgent=none`; do not confuse `Server accepts key` with completed authentication.
 12. When the user requests a project migration, read `references/project-migration.md` completely, inventory the source project and choose a transfer method before changing the server.
+   Stage each approved application commit under an application-owned
+   `releases/RELEASE_ID` directory, keep secrets and persistent state under
+   `shared`, and run services through a stable `current` symlink. Verify the
+   former release before switching, use `scripts/switch-versioned-release.sh`
+   for an atomic current update with health-gated automatic rollback, and keep
+   at least the current and previous known-good releases. Do not run production
+   services directly from the mutable source checkout.
 13. When the user requests hosted WebUIs, read `references/webui-apps.md` completely and apply Phase 2b only after SSH and the foundation are healthy. Render or install the shared operations baseline, register one loopback application, verify its health, configure the HTTPS gateway, apply the Windows relay, install the public CA on the actual client, and test the full browser workflow.
 14. Treat each later WebUI as a separate application-owned service. Use a separate hostname by default; use a path prefix only after confirming the application supports that base path.
 15. When the user needs runtime recovery, install the optional Windows recovery watchdog from `references/webui-apps.md`; it wakes the selected WSL distribution and starts only explicitly configured user services before checking managed listeners, without restarting SSH or shutting down WSL.
@@ -75,6 +82,10 @@ Treat `bootstrap-wsl-ai-dev` as Phase 1 and this Skill as Phase 2. Read `referen
 - Run `scripts/render-manuals.sh` after the hostname, users, distribution, or SSH port changes.
 - Use `scripts/install-workbench.sh` only after SSH and Windows forwarding are working.
 - Use `scripts/install-webui-apps.sh` only when the user explicitly requests Phase 2b; use `--render-only` for review and testing before changing the live server.
+- Use `scripts/switch-versioned-release.sh` only after staging immutable release
+  metadata, release-local dependencies, shared data/config links, service units
+  that reference `current`, and a tested former release. It switches no registry
+  or gateway state; update those records only after the application is healthy.
 - Run `scripts/self-test-webui-apps.sh` after changing the Phase 2b installer, registry, health checker, Caddy template, or systemd templates.
 - Run `scripts/Configure-WslWebGatewayLan.ps1` only from elevated Windows PowerShell after the WSL gateway listener is healthy.
 - Use `scripts/Configure-WslStartupTask.ps1` to add the optional passwordless S4U boot wake task; retain existing logon tasks until a maintenance-window cold-start test passes.

@@ -88,7 +88,7 @@ git clone ~/project.bundle ~/codebase/&lt;project-name&gt;</pre>
     <p>按项目既有工具安装并验证依赖，例如使用锁文件和隔离环境。不要使用全局 <code>sudo pip install</code> 或在生产目录手工修改依赖。</p>
 
     <h2 id="local">5. 在 WSL 内完成本地验证</h2>
-    <p>先创建仓库外配置，再以普通用户运行。以下仅表示通用检查，实际启动命令以项目文档为准：</p>
+    <p>先创建仓库外配置，再以普通用户从 source checkout 验证代码和构建。此处只做上线前验证，生产服务不会直接运行这个可变工作区：</p>
     <pre>cd ~/codebase/&lt;project-name&gt;
 &lt;install-from-lockfile&gt;
 &lt;run-tests-and-build&gt;
@@ -99,18 +99,23 @@ curl --fail http://127.0.0.1:&lt;app-port&gt;/&lt;version-path&gt;
 ss -ltnp</pre>
     <p>用无痕窗口或全新浏览器配置验证登录、文件上传下载、长任务、报告生成、刷新和错误提示。此阶段端口仍不得从 LAN 访问。</p>
 
-    <h2 id="service">6. 交给 systemd 长期运行</h2>
-    <p>把下列信息交给管理员：工作目录、唯一启动命令、环境文件路径、回环端口、健康路径、停止超时、资源需求以及持久数据目录。管理员按服务器模板创建应用自有的用户服务。</p>
+    <h2 id="service">6. 版本化部署并交给 systemd</h2>
+    <p>管理员从明确且干净的 commit 建立独立部署根目录：代码、虚拟环境、Node 依赖和构建产物进入不可变的 <code>releases/VERSION-COMMIT</code>；真实配置、数据库、上传、报告、日志和明确运行状态进入 <code>shared</code>；<code>current</code> 原子指向当前 release。源工作区、部署副本和 Git bare/mirror 仓库是不同对象，不能混称为镜像。</p>
+    <pre>~/wsl-server/apps/&lt;application-id&gt;/
+  releases/VERSION-COMMIT/
+  shared/config/  shared/data/  shared/logs/  shared/runtime/
+  current -&gt; releases/VERSION-COMMIT</pre>
+    <p>release 必须记录完整 commit 和版本，不能包含 <code>.git</code>、真实 <code>.env</code>、数据库或业务日志。systemd 的工作目录和启动命令都必须经过 <code>current</code>，环境和持久路径明确指向 <code>shared</code>。</p>
     <pre>systemctl --user daemon-reload
 systemctl --user enable --now &lt;application-service&gt;.service
 systemctl --user status &lt;application-service&gt;.service --no-pager
 journalctl --user -u &lt;application-service&gt;.service --since today --no-pager</pre>
-    <p>服务应设置工作目录、仓库外环境文件、失败自动重启和合理资源限制。不要在 systemd 单元中写秘密，也不要以 root 运行普通 WebUI。应用启动失败时应退出，由 systemd 记录并重试，而不是在应用内无限后台化。</p>
+    <p>切换前核对磁盘空间、依赖、数据兼容性、原 unit/registry 备份、旧版本健康和精确恢复命令。发现不可逆数据库迁移、未知写入或 shared 冲突时停止。服务应设置失败自动重启和合理资源限制，不在 unit 中写秘密，也不以 root 运行普通 WebUI。</p>
 
     <h2 id="publish">7. 应用注册、HTTPS 网关与备份</h2>
     <p>由服务器管理员完成以下动作，项目负责人提供输入并参与验证：</p>
     <ol>
-      <li>将应用加入 WebUI 注册表，只登记服务名、回环地址、健康路径及秘密文件和持久数据的路径。</li>
+      <li>将应用加入 WebUI 注册表，记录 source、commit、deploy root、current/previous release、服务、回环地址、健康路径及秘密文件和持久数据的路径。</li>
       <li>启用应用健康检查 timer，确认连续检查通过；健康检查不得修改业务数据。</li>
       <li>为应用分配独立主机名。只有应用明确支持 base path 时才使用路径前缀。</li>
       <li>在共享 Caddy 网关启用认证 HTTPS。应用端口仍保持回环监听。</li>
@@ -132,10 +137,11 @@ journalctl --user -u &lt;application-service&gt;.service --since today --no-page
 
     <h2 id="cutover">9. 切换与回滚</h2>
     <ol>
-      <li>冻结旧实例写入，记录旧、新版本提交 ID，并执行最后一次数据同步和校验。</li>
-      <li>先让少量真实用户通过 HTTPS 验收，再宣布切换；保留旧实例和直接测试入口只作为限时回滚。</li>
-      <li>观察服务日志、健康记录、资源占用和用户反馈，确认稳定后再停用旧实例。</li>
-      <li>回滚时先停止新实例写入，恢复兼容的数据快照和旧版本，再验证健康与核心流程。</li>
+      <li>冻结旧实例写入，记录旧、新版本提交 ID，并执行最后一次数据同步、校验和备份。</li>
+      <li>验证 former current 健康后，用 <code>switch-versioned-release.sh</code> 原子切换，只重启列出的应用服务并等待所有 health gate。</li>
+      <li>任一 restart 或健康检查失败时，脚本自动恢复 former current 并再次检查；registry 只在新版本健康后更新。</li>
+      <li>首次迁移必须实测一次回滚和恢复，再让少量真实用户通过 HTTPS 验收。至少保留 current 和 previous 两个已验证 release。</li>
+      <li>观察服务日志、健康记录、资源占用和用户反馈；回滚涉及数据时先停止写入并恢复兼容快照。</li>
     </ol>
     <p>回滚必须考虑数据库或数据格式兼容性。代码可回退不等于数据可回退；任何破坏性迁移都应先生成可验证快照。</p>
 

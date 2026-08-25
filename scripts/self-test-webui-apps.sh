@@ -15,6 +15,11 @@ bash "$skill_dir/scripts/install-webui-apps.sh" \
   --gateway-hostname demo-host \
   --gateway-port 8443 \
   --caddy-bin /nonexistent/caddy \
+  --source-path /srv/source/demo-app \
+  --deploy-root /srv/apps/demo-app \
+  --release-id 1.2.3-0123456789ab \
+  --source-commit 0123456789abcdef0123456789abcdef01234567 \
+  --app-version 1.2.3 \
   --install-dir /srv/wsl-server/apps \
   --render-only "$rendered"
 
@@ -24,6 +29,71 @@ if rg -n '__[A-Z0-9_]+__|caojiang|cjnotebook1|known-secret-value' "$rendered"; t
   printf 'Rendered output contains a placeholder, host-specific value, or secret.\n' >&2
   exit 1
 fi
+python3 "$rendered/scripts/check-app-health.py" \
+  --registry "$rendered/registry.json" --validate
+legacy_registry="$tmp_dir/legacy-registry.json"
+cat > "$legacy_registry" <<'EOF'
+{
+  "schema_version": 1,
+  "apps": [
+    {
+      "id": "legacy-app",
+      "display_name": "Legacy App",
+      "enabled": true,
+      "service_unit": "legacy-app.service",
+      "listen": {"host": "127.0.0.1", "port": 8102},
+      "health": {
+        "url": "http://127.0.0.1:8102/health",
+        "expected_status": [200],
+        "timeout_seconds": 2
+      }
+    }
+  ]
+}
+EOF
+python3 "$rendered/scripts/check-app-health.py" --registry "$legacy_registry" --validate
+python3 - "$legacy_registry" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+registry = json.loads(path.read_text(encoding="utf-8"))
+registry["apps"][0]["health"]["url"] = "http://0.0.0.0:8102/health"
+path.write_text(json.dumps(registry), encoding="utf-8")
+PY
+if python3 "$rendered/scripts/check-app-health.py" --registry "$legacy_registry" --validate >/dev/null 2>&1; then
+  printf 'Validator accepted a non-loopback legacy health URL.\n' >&2
+  exit 1
+fi
+python3 - "$rendered/registry.json" <<'PY'
+import json
+import pathlib
+import sys
+
+registry = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+gateway = registry["apps"][0]["gateway"]
+app = registry["apps"][0]
+assert gateway["hostname"] == "demo-host"
+assert gateway["windows_listen_port"] == 443
+assert gateway["wsl_listen"] == "127.0.0.1:8443"
+assert gateway["tls"] == "internal-ca"
+assert gateway["authentication"] == "basic"
+assert app["source_path"] == "/srv/source/demo-app"
+assert app["version"] == "1.2.3"
+assert app["git_commit"] == "0123456789abcdef0123456789abcdef01234567"
+assert app["deployment"] == {
+    "strategy": "versioned-current-symlink",
+    "deploy_root": "/srv/apps/demo-app",
+    "current_path": "/srv/apps/demo-app/current",
+    "current_release": "1.2.3-0123456789ab",
+    "release_path": "/srv/apps/demo-app/releases/1.2.3-0123456789ab",
+    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+}
+app["deployment"]["previous_release"] = "1.2.2-fedcba987654"
+app["deployment"]["previous_release_path"] = "/srv/apps/demo-app/releases/1.2.2-fedcba987654"
+pathlib.Path(sys.argv[1]).write_text(json.dumps(registry), encoding="utf-8")
+PY
 python3 "$rendered/scripts/check-app-health.py" \
   --registry "$rendered/registry.json" --validate
 
@@ -36,6 +106,11 @@ if bash "$skill_dir/scripts/install-webui-apps.sh" \
   --gateway-hostname demo-host \
   --gateway-port 8443 \
   --caddy-bin /nonexistent/caddy \
+  --source-path /srv/source/invalid \
+  --deploy-root /srv/apps/invalid \
+  --release-id 1.0.0-0123456789ab \
+  --source-commit 0123456789abcdef0123456789abcdef01234567 \
+  --app-version 1.0.0 \
   --install-dir /srv/wsl-server/apps \
   --render-only "$tmp_dir/invalid" >/dev/null 2>&1; then
   printf 'Installer accepted an invalid application id.\n' >&2
@@ -51,6 +126,11 @@ if bash "$skill_dir/scripts/install-webui-apps.sh" \
   --gateway-hostname demo-host \
   --gateway-port 8443 \
   --caddy-bin /bin/true \
+  --source-path /srv/source/demo-app \
+  --deploy-root /srv/apps/demo-app \
+  --release-id 1.2.3-0123456789ab \
+  --source-commit 0123456789abcdef0123456789abcdef01234567 \
+  --app-version 1.2.3 \
   --install-dir "$tmp_dir/invalid-caddy" >/dev/null 2>&1; then
   printf 'Installer accepted an executable that is not Caddy.\n' >&2
   exit 1
@@ -126,6 +206,14 @@ def app(path):
 try:
     same_origin = module.check_app(app("/redirect-local"))
     assert same_origin["healthy"], same_origin
+    legacy = app("/health")
+    legacy["health"] = {
+        "url": f"http://127.0.0.1:{source.server_port}/health",
+        "expected_status": [200],
+        "timeout_seconds": 2,
+    }
+    legacy_result = module.check_app(legacy)
+    assert legacy_result["healthy"], legacy_result
     cross_origin = module.check_app(app("/redirect-cross"))
     assert not cross_origin["healthy"], cross_origin
     assert "cross-origin" in (cross_origin["error"] or ""), cross_origin
