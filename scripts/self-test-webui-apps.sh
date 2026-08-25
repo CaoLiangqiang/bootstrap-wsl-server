@@ -72,6 +72,7 @@ import pathlib
 import sys
 
 registry = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert registry["sync_projects"] == []
 gateway = registry["apps"][0]["gateway"]
 app = registry["apps"][0]
 assert gateway["hostname"] == "demo-host"
@@ -92,10 +93,88 @@ assert app["deployment"] == {
 }
 app["deployment"]["previous_release"] = "1.2.2-fedcba987654"
 app["deployment"]["previous_release_path"] = "/srv/apps/demo-app/releases/1.2.2-fedcba987654"
+registry["sync_projects"] = [
+    {
+        "id": "demo-app", "enabled": True, "source_path": "/srv/source/demo-app",
+        "source_origin": "git@example.invalid:group/demo-app.git", "remote": "origin",
+        "deploy_root": "/srv/apps/demo-app", "sync_policy": "fetch-only",
+        "timeout_seconds": 60, "retries": 2,
+    },
+    {
+        "id": "staged-app", "enabled": True, "source_path": "/srv/source/staged-app",
+        "source_origin": "ssh://git@example.invalid/group/staged-app.git", "remote": "origin",
+        "deploy_root": "/srv/apps/staged-app", "sync_policy": "stage-release",
+        "timeout_seconds": 90, "retries": 1,
+        "stage_release": {
+            "kind": "tag", "value": "v1.2.3",
+            "expected_commit": "0123456789abcdef0123456789abcdef01234567",
+            "release_id": "1.2.3-0123456789ab",
+            "verify_hook": ".wsl-server/stage-release", "verify_args": ["--offline"],
+        },
+    },
+]
 pathlib.Path(sys.argv[1]).write_text(json.dumps(registry), encoding="utf-8")
 PY
 python3 "$rendered/scripts/check-app-health.py" \
   --registry "$rendered/registry.json" --validate
+
+sync_only_registry="$tmp_dir/sync-only-registry.json"
+cat > "$sync_only_registry" <<'EOF'
+{
+  "schema_version": 1,
+  "sync_projects": [
+    {
+      "id": "source-only", "enabled": true,
+      "source_path": "/srv/source/source-only",
+      "source_origin": "git@example.invalid:group/source-only.git",
+      "remote": "origin", "deploy_root": "/srv/apps/source-only",
+      "sync_policy": "fetch-only", "timeout_seconds": 60, "retries": 1
+    }
+  ],
+  "apps": []
+}
+EOF
+python3 "$rendered/scripts/check-app-health.py" \
+  --registry "$sync_only_registry" --validate
+
+python3 - "$rendered/scripts/check-app-health.py" <<'PY'
+import copy
+import importlib.util
+import pathlib
+import sys
+
+spec = importlib.util.spec_from_file_location("registry_validator", pathlib.Path(sys.argv[1]))
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+base = {
+    "id": "demo-app", "enabled": True, "source_path": "/srv/source/demo-app",
+    "source_origin": "https://example.invalid/group/demo-app.git", "remote": "origin",
+    "deploy_root": "/srv/apps/demo-app", "sync_policy": "fetch-only",
+    "timeout_seconds": 60, "retries": 1,
+}
+invalid = []
+case = copy.deepcopy(base); case["source_origin"] = "https://user:secret@example.invalid/repo.git"; invalid.append(case)
+case = copy.deepcopy(base); case["source_path"] = "/srv/%n/source"; invalid.append(case)
+case = copy.deepcopy(base); case["remote"] = "upstream"; invalid.append(case)
+case = copy.deepcopy(base); case["sync_policy"] = "stage-release"; invalid.append(case)
+case = copy.deepcopy(base); case["stage_release"] = {}; invalid.append(case)
+for tag in ("bad..tag", ".hidden", "trailing.", "folder/.hidden", "name.lock"):
+    case = copy.deepcopy(base)
+    case["sync_policy"] = "stage-release"
+    case["stage_release"] = {
+        "kind": "tag", "value": tag,
+        "expected_commit": "0123456789abcdef0123456789abcdef01234567",
+        "release_id": "candidate", "verify_hook": "verify", "verify_args": [],
+    }
+    invalid.append(case)
+for case in invalid:
+    try:
+        module.validate_sync_projects([case])
+    except module.RegistryError:
+        continue
+    raise AssertionError(f"validator accepted invalid sync project: {case!r}")
+PY
 
 if bash "$skill_dir/scripts/install-webui-apps.sh" \
   --app-id invalid_app \

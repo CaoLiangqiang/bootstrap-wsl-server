@@ -64,7 +64,24 @@ Preserve these boundaries:
 - Do not treat the registry as proof of Windows firewall, TLS, or
   authentication state. Verify those layers directly.
 
-Require Python 3, `curl`, GNU coreutils, systemd user services, Caddy 2.6 or newer, a mounted Windows
+### Client URL convention
+
+Every user-facing application must have one canonical lowercase hostname under
+the server naming suffix, for example:
+
+```text
+https://APP_ID.SERVER_NAME.local/
+```
+
+Use the application ID as the first label. A frontend and its API remain one
+user-facing URL when the gateway routes both; never publish the internal API
+port, WSL address, `:8443`, or a temporary direct HTTP relay as the normal
+client address. Keep former hostnames only as explicitly documented migration
+aliases, and remove them after clients switch. If no managed DNS exists, add
+the canonical names to the client `hosts` file, all pointing to the current
+Windows LAN IP; do not put the WSL NAT address in client configuration.
+
+Require Python 3.10 or newer, `curl`, GNU coreutils, systemd user services, Caddy 2.6 or newer, a mounted Windows
 profile for script deployment, and a WebUI application that can listen on
 loopback. Obtain Caddy through an approved package source and verify the
 package or binary; do not commit the binary to this repository.

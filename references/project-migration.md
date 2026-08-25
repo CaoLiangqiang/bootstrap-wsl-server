@@ -17,6 +17,7 @@ Windows 电脑上运行的 WebUI 项目迁移到长期运行的 WSL2 Ubuntu 服�
 - 应用由独立的 systemd 用户服务管理，异常退出后能自动恢复；
 - 应用只监听 WSL 的 `127.0.0.1`，不直接暴露到局域网；
 - 共享 Caddy 网关提供 HTTPS 和认证，Windows 只转发网关端口；
+- 客户端使用统一的 `https://APP_ID.SERVER_NAME.local/` 规范地址；
 - 实际客户端已验证公共 CA 指纹、安装证书并完成浏览器验收；
 - 密钥、令牌、密码、`.env` 和私有 CA 密钥均未进入 Git、聊天或日志；
 - 必需的配置和持久数据已经进入加密备份，并做过恢复演练；
@@ -71,7 +72,7 @@ Windows 电脑上运行的 WebUI 项目迁移到长期运行的 WSL2 Ubuntu 服�
 | 服务单元 | 唯一的 `APP_ID.service` |
 | 应用端口 | 未占用的高位端口，不能是保留的 `4173` |
 | 健康路径 | 便宜、无副作用、不泄露秘密的 HTTP 路径 |
-| 网关主机名 | 每个应用默认使用独立主机名，不使用 IP 地址 |
+| 网关主机名 | 使用 `APP_ID.SERVER_NAME.local`，不使用 IP 地址 |
 | 数据与报告 | 每个路径的所有者、规模、是否必需、停机一致性要求 |
 | 外部依赖 | 数据库、代理、许可证、API、SMTP、网络共享等 |
 | 恢复目标 | 可接受的数据丢失时间和恢复时间 |
@@ -404,7 +405,8 @@ bash scripts/install-webui-apps.sh \
 安装脚本会拒绝覆盖；此时必须备份现状，通过 render-only 生成参考，只合并新应用
 registry 条目和独立 Caddy site，不能替换其他应用配置。
 
-每个新应用默认使用独立主机名。只有应用明确支持 base path 时才采用路径前缀。
+每个新应用默认使用规范的 `APP_ID.SERVER_NAME.local` 独立主机名。只有应用明确
+支持 base path 时才采用路径前缀。客户端地址不包含 `:8443`、内部端口或 WSL IP。
 Caddy 反向代理目标必须是 `127.0.0.1:APP_PORT`，网关本身也只能绑定 WSL 回环。
 
 合并后先做结构和 Caddy 配置验证，再仅重启网关并启用该应用健康定时器：
@@ -436,7 +438,7 @@ Import-Certificate -FilePath .\SERVER-webui-root.crt `
   -CertStoreLocation Cert:\CurrentUser\Root
 ```
 
-为每个应用主机名配置受控 DNS；没有 DNS 时可暂时使用经管理员批准的客户端
+为每个应用规范主机名配置受控 DNS；没有 DNS 时可暂时使用经管理员批准的客户端
 hosts 条目。不能用 IP 替代证书中的主机名。关闭所有浏览器进程并重新打开后，
 验证：
 
