@@ -65,6 +65,46 @@ def valid_absolute_path(value: Any, context: str) -> pathlib.Path:
     return path
 
 
+def reject_symlink_components(path: pathlib.Path, context: str) -> None:
+    current = pathlib.Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(mode):
+            fail(f"{context} must not contain symbolic links")
+
+
+def paths_overlap(left: pathlib.Path, right: pathlib.Path) -> bool:
+    left = left.resolve(strict=False)
+    right = right.resolve(strict=False)
+    return left == right or left in right.parents or right in left.parents
+
+
+def validate_runtime_paths(
+    registry: pathlib.Path, state_dir: pathlib.Path, projects: list[dict[str, Any]]
+) -> None:
+    valid_absolute_path(str(registry), "registry")
+    valid_absolute_path(str(state_dir), "state directory")
+    reject_symlink_components(registry, "registry")
+    reject_symlink_components(state_dir, "state directory")
+    if not registry.is_file():
+        fail("registry must be a regular file")
+    protected = [(registry.parent, "registry directory")]
+    for project in projects:
+        protected.extend(
+            [
+                (pathlib.Path(project["source_path"]), f"{project['id']} source"),
+                (pathlib.Path(project["deploy_root"]), f"{project['id']} deploy root"),
+            ]
+        )
+    for path, context in protected:
+        if paths_overlap(state_dir, path):
+            fail(f"state directory must not overlap {context}")
+
+
 def strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -361,7 +401,39 @@ def stage_release(source: pathlib.Path, project: dict[str, Any]) -> dict[str, An
         hook_path = stage / hook
         if not hook_path.is_file() or hook_path.is_symlink() or not os.access(hook_path, os.X_OK):
             fail("staged verify hook is missing or unsafe")
-        run([str(hook_path), *selector["verify_args"]], timeout_seconds, cwd=stage)
+        bubblewrap = shutil.which("bwrap")
+        if bubblewrap is None:
+            fail("stage-release requires bubblewrap")
+        run(
+            [
+                bubblewrap,
+                "--unshare-all",
+                "--die-with-parent",
+                "--new-session",
+                "--clearenv",
+                "--ro-bind",
+                "/",
+                "/",
+                "--bind",
+                str(stage),
+                str(stage),
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--setenv",
+                "HOME",
+                str(stage),
+                "--setenv",
+                "PATH",
+                os.defpath,
+                "--chdir",
+                str(stage),
+                str(hook_path),
+                *selector["verify_args"],
+            ],
+            timeout_seconds,
+        )
         (stage / ".release.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
         os.chmod(stage / ".release.json", stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
         os.rename(stage, destination)
@@ -376,6 +448,9 @@ def stage_release(source: pathlib.Path, project: dict[str, Any]) -> dict[str, An
 
 def write_report(state_dir: pathlib.Path, project_id: str, report: dict[str, Any]) -> None:
     state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(state_dir, "state directory")
+    if not state_dir.is_dir():
+        fail("state directory must be a directory")
     os.chmod(state_dir, 0o700)
     temporary = state_dir / f".{project_id}.{os.getpid()}.tmp"
     destination = state_dir / f"{project_id}.json"
@@ -431,9 +506,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     try:
-        if not args.registry.is_absolute() or not args.state_dir.is_absolute():
-            fail("registry and state paths must be absolute")
         projects = load_projects(args.registry)
+        validate_runtime_paths(args.registry, args.state_dir, projects)
         if args.project:
             projects = [project for project in projects if project["id"] == args.project]
             if not projects:
@@ -447,6 +521,7 @@ def main() -> int:
                 print(f"SYNC_DRY_RUN_OK id={project['id']} policy={project['sync_policy']}")
             return 0
         args.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        reject_symlink_components(args.state_dir, "state directory")
         lock_path = args.state_dir / ".sync.lock"
         with lock_path.open("a+", encoding="utf-8") as lock:
             os.chmod(lock_path, 0o600)

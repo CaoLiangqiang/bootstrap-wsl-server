@@ -61,10 +61,13 @@ hook. A moving branch name is never accepted:
 }
 ```
 
-The hook is code from the approved commit and must be reviewed before use. It
-must not require secrets or modify shared data. Dependencies and build output
-needed by production belong inside the staged release; persistent data, config,
-secrets, and logs remain under `shared`.
+The hook is code from the approved commit and must be reviewed before use.
+`stage-release` requires the Ubuntu `bubblewrap` package and runs the hook with
+an isolated network, an empty environment, a read-only root filesystem, and
+write access only to its temporary stage. The hook must not require secrets or
+network access. Dependencies and build output needed by production belong
+inside the staged release; persistent data, config, secrets, and logs remain
+under `shared`.
 
 ## Git authentication
 
@@ -120,6 +123,10 @@ Each private `PROJECT_ID.json` report records check time, policy, observed HEAD,
 fetched remote HEAD, ahead/behind, dirty status, update availability, staging
 result, or a sanitized failure category. Reports are atomic and do not modify
 the registry or appear in the Workbench API.
+
+Keep the state directory physically separate from the registry directory and
+every source or deployment tree. The validator rejects path overlap and any
+symbolic-link component before granting the service a write path.
 
 After a `stage-release` report succeeds, inspect `.release.json`, verify the
 release contains no secrets or persistent data, and run application-specific
