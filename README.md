@@ -61,6 +61,9 @@ immutable tag or full commit under `releases`, but never changes `current`.
 `auto-deploy` is reserved in the schema and deliberately rejected. See
 [`references/project-sync.md`](references/project-sync.md) for the registry,
 render-only installation, reports, and deploy-key boundaries.
+The optional `stage-release` policy additionally requires Ubuntu's public
+`bubblewrap` package to isolate repository-provided verification hooks;
+`fetch-only` does not require it.
 
 ## Upgrade And Rollback
 

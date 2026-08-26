@@ -12,6 +12,13 @@
 - Normalize client delivery addresses to `https://APP_ID.SERVER_NAME.local/`
   while retaining aliases only as an explicit migration measure.
 
+## [0.2.1] - 2026-08-26
+
+- Reject symbolic-link or overlapping project-sync state directories before
+  granting write access or creating reports.
+- Isolate staged-release verification hooks with Bubblewrap so they can write
+  only to the temporary candidate release, not retained or active releases.
+
 ## Unreleased
 
 ## [0.1.0] - 2026-08-25

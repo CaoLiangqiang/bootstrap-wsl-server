@@ -15,7 +15,9 @@ publisher="$tmp_dir/publisher"
 source="$tmp_dir/source"
 deploy="$tmp_dir/deploy"
 state="$tmp_dir/state"
-registry="$tmp_dir/registry.json"
+registry_dir="$tmp_dir/config"
+registry="$registry_dir/registry.json"
+install -d -m 0755 "$registry_dir"
 git init --bare --initial-branch=main "$remote" >/dev/null
 git init -b main "$publisher" >/dev/null
 git -C "$publisher" config user.name fixture
@@ -72,6 +74,23 @@ if python3 "$sync_script" --registry "$duplicate_registry" \
   printf 'Duplicate JSON keys were accepted.\n' >&2
   exit 1
 fi
+
+# State reports must not follow symlinks or overlap registry/source/deploy paths.
+state_target="$tmp_dir/state-target"
+install -d -m 0700 "$state_target"
+ln -s "$state_target" "$tmp_dir/state-link"
+if WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
+  --registry "$registry" --state-dir "$tmp_dir/state-link" --validate >/dev/null 2>&1; then
+  printf 'A symbolic-link state directory was accepted.\n' >&2
+  exit 1
+fi
+for unsafe_state in "$registry_dir" "$source" "$source/reports" "$deploy" "$deploy/shared"; do
+  if WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
+    --registry "$registry" --state-dir "$unsafe_state" --validate >/dev/null 2>&1; then
+    printf 'An overlapping state directory was accepted: %s\n' "$unsafe_state" >&2
+    exit 1
+  fi
+done
 WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
   --registry "$registry" --state-dir "$state" --dry-run | grep -q SYNC_DRY_RUN_OK
 WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
@@ -127,6 +146,38 @@ write_registry stage-release "$selector"
 WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
   --registry "$registry" --state-dir "$state" | grep -q SYNC_OK
 release="$deploy/releases/1.0.0-${approved_commit:0:12}"
+
+# The verification hook can write only its stage, not retained releases.
+printf 'retained\n' > "$release/retained.txt"
+cat > "$publisher/.wsl-server/stage-release" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+test -f payload.txt
+if printf 'modified\n' > '$release/retained.txt' 2>/dev/null; then
+  exit 1
+fi
+test "\${1:-}" = fixture-check
+EOF
+chmod 0755 "$publisher/.wsl-server/stage-release"
+git -C "$publisher" add .wsl-server/stage-release
+git -C "$publisher" commit -m isolated-hook >/dev/null
+isolated_commit="$(git -C "$publisher" rev-parse HEAD)"
+git -C "$publisher" tag v1.0.1
+git -C "$publisher" push origin main v1.0.1 >/dev/null
+isolated_selector=",
+      \"stage_release\": {
+        \"kind\": \"tag\",
+        \"value\": \"v1.0.1\",
+        \"expected_commit\": \"$isolated_commit\",
+        \"release_id\": \"1.0.1-${isolated_commit:0:12}\",
+        \"verify_hook\": \".wsl-server/stage-release\",
+        \"verify_args\": [\"fixture-check\"]
+      }"
+write_registry stage-release "$isolated_selector"
+WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
+  --registry "$registry" --state-dir "$state" | grep -q SYNC_OK
+grep -qx retained "$release/retained.txt"
+test -d "$deploy/releases/1.0.1-${isolated_commit:0:12}"
 test -f "$release/payload.txt"
 test ! -e "$release/.git"
 python3 - "$release/.release.json" "$approved_commit" <<'PY'
