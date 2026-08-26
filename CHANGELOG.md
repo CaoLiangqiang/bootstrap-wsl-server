@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-08-26
+
+- Remove the accidental ripgrep runtime dependency from audit, rendering, and
+  self-test scripts by using baseline `grep` and `find` operations.
+- Add a regression that places a failing ripgrep sentinel first in `PATH` and
+  proves production renderers do not invoke it or silently ignore its absence.
+
 ## [0.2.0] - 2026-08-25
 
 - Add opt-in, registry-driven periodic project maintenance with read-only

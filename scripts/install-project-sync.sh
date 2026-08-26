@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+command -v grep >/dev/null 2>&1 || { printf 'Required command is missing: grep\n' >&2; exit 127; }
+
 registry=''
 install_dir="${HOME}/wsl-server/project-sync"
 state_dir="${HOME}/.local/state/wsl-project-sync"
@@ -82,7 +84,7 @@ sed \
   -e "s|__READ_WRITE_PATHS__|$(escape_sed "$read_write_paths")|g" \
   "$skill_dir/assets/project-sync/wsl-project-sync.service.in" > "$stage/wsl-project-sync.service"
 
-if rg -n '__[A-Z0-9_]+__' "$stage"; then fail 'Rendered output has unresolved placeholders.'; fi
+if grep -ERn '__[A-Z0-9_]+__' "$stage"; then fail 'Rendered output has unresolved placeholders.'; fi
 
 destination="${render_only:-$install_dir}"
 [ ! -e "$destination" ] && [ ! -L "$destination" ] || fail 'Install destination must not exist.'

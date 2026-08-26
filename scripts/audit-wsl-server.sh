@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -u
 
+command -v grep >/dev/null 2>&1 || { printf 'Required command is missing: grep\n' >&2; exit 127; }
+
 status=0
 check() {
   local label="$1"; shift
@@ -29,7 +31,6 @@ ip -4 route show default 2>/dev/null || true
 printf '\nResolver:\n'
 sed -n '/^[[:space:]]*\(nameserver\|search\)[[:space:]]/p' /etc/resolv.conf 2>/dev/null || true
 printf '\nSSH policy files:\n'
-rg -n '^[[:space:]]*(PermitRootLogin|PubkeyAuthentication|PasswordAuthentication|KbdInteractiveAuthentication|AllowUsers|ClientAliveInterval|ClientAliveCountMax)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
+grep -ERn '^[[:space:]]*(PermitRootLogin|PubkeyAuthentication|PasswordAuthentication|KbdInteractiveAuthentication|AllowUsers|ClientAliveInterval|ClientAliveCountMax)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
 
 exit "$status"
-

@@ -107,6 +107,7 @@ Run the repository self-tests after changing templates or scripts:
 ```bash
 bash scripts/self-test-webui-apps.sh
 bash scripts/self-test-project-sync.sh
+bash scripts/self-test-no-ripgrep.sh
 bash scripts/self-test.sh
 ```
 

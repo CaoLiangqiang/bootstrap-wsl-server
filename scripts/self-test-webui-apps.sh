@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+command -v grep >/dev/null 2>&1 || { printf 'Required command is missing: grep\n' >&2; exit 127; }
+
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/webui-skill-test.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -25,7 +27,7 @@ bash "$skill_dir/scripts/install-webui-apps.sh" \
 
 test -x "$rendered/scripts/check-app-health.py"
 test "$(stat -c %a "$rendered/registry.json")" = 644
-if rg -n '__[A-Z0-9_]+__|caojiang|cjnotebook1|known-secret-value' "$rendered"; then
+if grep -ERn '__[A-Z0-9_]+__|caojiang|cjnotebook1|known-secret-value' "$rendered"; then
   printf 'Rendered output contains a placeholder, host-specific value, or secret.\n' >&2
   exit 1
 fi

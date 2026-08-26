@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+command -v grep >/dev/null 2>&1 || { printf 'Required command is missing: grep\n' >&2; exit 127; }
+command -v find >/dev/null 2>&1 || { printf 'Required command is missing: find\n' >&2; exit 127; }
+
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/wsl-project-sync-test.XXXXXX")"
 lock_pid=''
@@ -254,7 +257,7 @@ if WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 python3 "$sync_script" \
   exit 1
 fi
 grep -q 'configured origin does not exactly match' "$state/fixture-project.json"
-if rg -n 'not-the-configured-origin|file://' "$tmp_dir/mismatch.log"; then
+if grep -En 'not-the-configured-origin|file://' "$tmp_dir/mismatch.log"; then
   printf 'Origin was exposed in sync logs.\n' >&2
   exit 1
 fi
@@ -270,7 +273,7 @@ if python3 "$sync_script" --registry "$registry" --state-dir "$state" --validate
   printf 'Credential-bearing HTTPS origin was accepted.\n' >&2
   exit 1
 fi
-if rg -n 'user:secret' "$tmp_dir/credential.log"; then
+if grep -En 'user:secret' "$tmp_dir/credential.log"; then
   printf 'Credential-bearing origin was exposed in validation logs.\n' >&2
   exit 1
 fi
@@ -313,7 +316,7 @@ assert report["observed_head_before_fetch"] == sys.argv[2]
 assert report["remote_head"] is None
 assert report["failure"] in {"git-failed", "not-found"}
 PY
-if rg -n 'missing\.git|file://' "$tmp_dir/fetch-failure.log"; then
+if grep -En 'missing\.git|file://' "$tmp_dir/fetch-failure.log"; then
   printf 'Failed origin was exposed in sync logs.\n' >&2
   exit 1
 fi
@@ -378,7 +381,7 @@ WSL_PROJECT_SYNC_ALLOW_FILE_ORIGIN=1 HOME="$tmp_dir/home" \
     --state-dir "$tmp_dir/rendered-state" --render-only "$rendered" >/dev/null
 test -x "$rendered/sync-projects.py"
 grep -Fq -- "-$source/.git" "$rendered/wsl-project-sync.service"
-if rg -n '__[A-Z0-9_]+__|caojiang|cjnotebook1|known-secret-value' "$rendered"; then
+if grep -ERn '__[A-Z0-9_]+__|caojiang|cjnotebook1|known-secret-value' "$rendered"; then
   printf 'Rendered project sync output contains unsafe content.\n' >&2
   exit 1
 fi
