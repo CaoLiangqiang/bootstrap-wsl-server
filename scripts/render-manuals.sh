@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+command -v grep >/dev/null 2>&1 || { printf 'Required command is missing: grep\n' >&2; exit 127; }
+
 wsl_user="$(id -un)"
 windows_user=''
 windows_hostname=''
@@ -83,7 +85,7 @@ render "$skill_dir/assets/workbench/public/client-access-manual.html" "$client_m
 render "$skill_dir/assets/workbench/public/project-migration-manual.html" "$migration_manual"
 chmod 0644 "$host_manual" "$client_manual" "$migration_manual"
 
-if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual" "$migration_manual"; then
+if grep -En '__[A-Z0-9_]+__' "$host_manual" "$client_manual" "$migration_manual"; then
   printf 'Manual rendering left unresolved template values.\n' >&2
   exit 1
 fi

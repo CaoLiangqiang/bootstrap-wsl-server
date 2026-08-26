@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+command -v grep >/dev/null 2>&1 || { printf 'Required command is missing: grep\n' >&2; exit 127; }
+command -v find >/dev/null 2>&1 || { printf 'Required command is missing: find\n' >&2; exit 127; }
+
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-wsl-server-test.XXXXXX")"
 health_server_pid=''
@@ -177,7 +180,7 @@ rendered="$tmp_dir/rendered-workbench"
 bash "$skill_dir/scripts/install-workbench.sh" \
   --windows-user testwindows --windows-hostname testhost --distro TestDistro \
   --ssh-port 2229 --render-only "$rendered" >/dev/null
-if rg -n '__[A-Z0-9_]+__' "$rendered"; then
+if grep -ERn '__[A-Z0-9_]+__' "$rendered"; then
   printf 'Found unresolved workbench template values.\n' >&2
   exit 1
 fi
@@ -307,14 +310,15 @@ grep -q 'testhost' "$client_manual"
 grep -q '2229' "$host_manual"
 grep -q 'testhost' "$migration_manual"
 grep -q '2229' "$migration_manual"
-if rg -n '__[A-Z0-9_]+__' "$host_manual" "$client_manual" "$migration_manual"; then
+if grep -En '__[A-Z0-9_]+__' "$host_manual" "$client_manual" "$migration_manual"; then
   printf 'Found unresolved manual template values.\n' >&2
   exit 1
 fi
 
-if rg -n 'caojiang|cjnotebook1|10\.197|Manage-WslSshPort' \
-  "$skill_dir/SKILL.md" "$skill_dir/references" "$skill_dir/assets" "$skill_dir/agents" \
-  --glob '!assets/workbench/public/vendor/lucide.min.js'; then
+if find "$skill_dir/SKILL.md" "$skill_dir/references" "$skill_dir/assets" "$skill_dir/agents" \
+  -type f ! -path '*/assets/workbench/public/vendor/lucide.min.js' \
+  ! -path '*/__pycache__/*' \
+  -exec grep -En 'caojiang|cjnotebook1|10\.197|Manage-WslSshPort' {} +; then
   printf 'Found machine-specific or obsolete content.\n' >&2
   exit 1
 fi
